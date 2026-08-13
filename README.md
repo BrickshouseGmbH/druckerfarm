@@ -1,14 +1,14 @@
 <div align="center">
 
-# 🖨️ Druckerfarm
+# Druckerfarm
 
 **A local dashboard for monitoring and managing a farm of FDM 3D printers.**
 
 Live video, status, AMS/filament, file sync and more — for many printers at once, on your own network.
 
-![Version](https://img.shields.io/badge/version-0.9.20%20(public%20beta)-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6)
-![Made by](https://img.shields.io/badge/by-Brickshouse%20GmbH-orange)
+_Public beta 0.9.20 · Windows 10 / 11 · by Brickshouse GmbH_
+
+### [⬇️ Download the latest release](../../releases/latest)
 
 </div>
 
@@ -45,7 +45,7 @@ Other Bambu models that expose the local LAN interface are expected to work for 
 
 ## 🚀 Getting started
 
-1. **Download** the latest `druckerfarm.exe` from [Releases](../../releases). It is portable — no installer.
+1. **Download** the latest `druckerfarm.exe` from [Releases](../../releases/latest). It is portable — no installer.
 2. **Run it.** On first launch you choose the language; the interface opens in its own Edge/Chrome app window (or your default browser as a fallback).
 3. **Prepare each printer** (on the printer's touchscreen):
    - Enable **LAN Mode** and note the **Access Code**.
@@ -106,6 +106,6 @@ Druckerfarm interoperates with the printer's **local network interface** using p
 
 <div align="center">
 
-© Brickshouse GmbH · [druckerfarm.ch](https://druckerfarm.ch)
+© Brickshouse GmbH
 
 </div>
