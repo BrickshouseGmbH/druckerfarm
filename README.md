@@ -6,7 +6,7 @@
 
 Live video, status, AMS/filament, file sync and more — for many printers at once, on your own network.
 
-_Public beta 0.9.20 · Windows 10 / 11 · by Brickshouse GmbH_
+_Public beta 0.9.74 · Windows 10 / 11 · by Brickshouse GmbH_
 
 ### [⬇️ Download the latest release](../../releases/latest)
 
