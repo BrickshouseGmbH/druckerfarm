@@ -1,0 +1,11 @@
+config.json
+go2rtc.yaml
+go2rtc.log
+*.log
+go2rtc.exe
+go2rtc
+ffmpeg/
+ffmpeg.exe
+druckerfarm
+druckerfarm.exe
+*.zip
