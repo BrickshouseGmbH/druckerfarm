@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// Legt ein Programm an, das sich als go2rtc ausgibt: es zaehlt seine Starts und
-// beendet sich nach kurzer Zeit von selbst — wie ein abstuerzendes go2rtc.
+// Creates a program that poses as go2rtc: it counts its starts and
+// exits by itself after a short while — like a crashing go2rtc.
 func fakeGo2rtcBinary(t *testing.T, dir, counter string, liveFor string) string {
 	t.Helper()
 	path := filepath.Join(dir, "go2rtc")
@@ -34,8 +34,8 @@ func starts(t *testing.T, counter string) int {
 	return strings.Count(string(b), "x")
 }
 
-// Der Kern: stirbt go2rtc, muss es von selbst wiederkommen. Vorher blieb es weg
-// und mit ihm alle Videos und Snapshots.
+// The core: if go2rtc dies, it must come back by itself. Previously it stayed gone
+// and with it all videos and snapshots.
 func TestSupervisorRestartsAfterCrash(t *testing.T) {
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "starts.txt")
@@ -54,7 +54,7 @@ func TestSupervisorRestartsAfterCrash(t *testing.T) {
 	go2rtcMu.Unlock()
 
 	startGo2rtc()
-	// 0,4 s Laufzeit + 1 s Wartezeit vor dem ersten Neustart
+	// 0.4 s runtime + 1 s wait before the first restart
 	time.Sleep(3 * time.Second)
 
 	n := starts(t, counter)
@@ -65,7 +65,7 @@ func TestSupervisorRestartsAfterCrash(t *testing.T) {
 	t.Logf("go2rtc wurde %dx gestartet — Überwachung greift", n)
 }
 
-// Ein gewollter Stopp darf keinen Neustart auslösen.
+// An intentional stop must not trigger a restart.
 func TestSupervisorRespectsDeliberateStop(t *testing.T) {
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "starts.txt")
@@ -90,8 +90,8 @@ func TestSupervisorRespectsDeliberateStop(t *testing.T) {
 	}
 }
 
-// Eine fehlgeschlagene Komponenten-Aktualisierung darf go2rtc nicht gestoppt
-// zurücklassen — genau das war der Fehler.
+// A failed component update must not leave go2rtc stopped
+// — that was exactly the bug.
 func TestFailedComponentUpdateLeavesGo2rtcRunning(t *testing.T) {
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "starts.txt")
@@ -113,7 +113,7 @@ func TestFailedComponentUpdateLeavesGo2rtcRunning(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	before := starts(t, counter)
 
-	// Aktualisierung, die scheitert: kein Repository erreichbar
+	// Update that fails: no repository reachable
 	oldURL := go2rtcURL
 	go2rtcURL = "http://127.0.0.1:1/gibtsnicht.zip"
 	defer func() { go2rtcURL = oldURL }()
@@ -152,8 +152,8 @@ func firstLine(s string) string {
 	return s
 }
 
-// Der Rückfall wächst, damit ein dauerhaft kaputtes go2rtc nicht im Sekundentakt
-// neu gestartet wird.
+// The backoff grows so a permanently broken go2rtc is not restarted
+// every second.
 func TestRestartBackoffGrows(t *testing.T) {
 	var last time.Duration
 	for fails := 0; fails < 8; fails++ {
@@ -177,8 +177,8 @@ func TestRestartBackoffGrows(t *testing.T) {
 	_ = fmt.Sprint
 }
 
-// Zehn Drucker nacheinander anzulegen loeste bisher zehn ueberlappende
-// Neustarts aus — go2rtc kam dabei kaum zum Laufen. Jetzt wird gesammelt.
+// Adding ten printers in a row used to trigger ten overlapping
+// restarts — go2rtc barely got running. Now they are coalesced.
 func TestNeustartsWerdenGesammelt(t *testing.T) {
 	dir := t.TempDir()
 	zaehler := filepath.Join(dir, "starts.txt")
@@ -197,7 +197,7 @@ func TestNeustartsWerdenGesammelt(t *testing.T) {
 	restartTimer = nil
 	go2rtcMu.Unlock()
 
-	// Zehn Anfragen in schneller Folge, wie beim Anlegen mehrerer Drucker
+	// Ten requests in quick succession, as when adding several printers
 	for i := 0; i < 10; i++ {
 		restartGo2rtcAsync()
 		time.Sleep(20 * time.Millisecond)
@@ -216,12 +216,12 @@ func TestNeustartsWerdenGesammelt(t *testing.T) {
 	go2rtcMu.Unlock()
 }
 
-// Ohne installiertes go2rtc darf gar nichts eingeplant werden — sonst laeuft
-// nach jedem Klick eine Goroutine ins Leere und greift auf Zustand zu, den
+// Without go2rtc installed nothing may be scheduled — otherwise
+// a goroutine runs into nothing after each click and accesses state that
 // niemand mehr erwartet.
 func TestKeinNeustartOhneGo2rtc(t *testing.T) {
 	altDir := appDir
-	appDir = t.TempDir() // leer, kein go2rtc darin
+	appDir = t.TempDir() // empty, no go2rtc in it
 	defer func() { appDir = altDir }()
 
 	go2rtcMu.Lock()

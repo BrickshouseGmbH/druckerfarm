@@ -4,22 +4,21 @@ import "strings"
 
 // ─── MODELLKENNUNGEN ──────────────────────────────────────────────────────────
 //
-// In der Netzwerkantwort steht nicht der Modellname, sondern eine interne
-// Kennung: ein X1E meldet sich als "C13". Ohne Uebersetzung steht diese Kennung
-// in der Liste, und niemand weiss, welches Geraet gemeint ist.
+// The network response does not contain the model name but an internal
+// identifier: an X1E reports itself as "C13". Without translation this code
+// shows up in the list and nobody knows which device is meant.
 //
-// Belegt sind die folgenden Zuordnungen (Profildateien im Slicer des
+// The following mappings are confirmed (profile files in the vendor's slicer):
 // Herstellers, resources/printers/):
 //
 //	C11   → P1P        C12   → P1S        C13 → X1E
 //	N1    → A1 mini    N2S   → A1         O1D → H2D    O1C → H2C
 //	BL-P001 → X1C      BL-P002 → X1
 //
-// Die H2-Reihe meldet sich nach dem Muster O1x: O1D = H2D, O1C = H2C (in der
-// Praxis taucht die Kennung auch als "O1C2" auf). Fuer H2S, X2D und P2S habe ich
-// keine belastbare Quelle — diese Kennungen bleiben unveraendert stehen, lieber
-// eine nachschlagbare Kennung als ein falscher Name. Das Modell laesst sich
-// ohnehin von Hand berichtigen.
+// The H2 series reports as O1x: O1D = H2D, O1C = H2C (in practice the code
+// also appears as "O1C2"). For H2S, X2D and P2S I have no reliable source —
+// these codes are left unchanged; a lookupable code is better than a wrong
+// name. The model can be corrected by hand anyway.
 var modellKennungen = map[string]string{
 	"C11":                 "P1P",
 	"C12":                 "P1S",
@@ -36,8 +35,8 @@ var modellKennungen = map[string]string{
 	"3DPRINTER-X1":        "X1",
 }
 
-// modellName uebersetzt eine Kennung, laesst aber alles unangetastet, was schon
-// wie ein Modellname aussieht — neuere Firmware meldet direkt "H2D".
+// modellName translates a code but leaves anything untouched that already
+// looks like a model name — newer firmware reports "H2D" directly.
 func modellName(roh string) string {
 	k := strings.ToUpper(strings.TrimSpace(roh))
 	if k == "" {

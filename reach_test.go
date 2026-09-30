@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// Die drei Faelle, die im Alltag auseinandergehalten werden muessen, jeweils
-// gegen echte Sockets — nicht gegen eine Attrappe.
+// The three cases that must be told apart in practice, each
+// against real sockets — not against a mock.
 func TestProbePortEchteSockets(t *testing.T) {
-	// Offener Port: ein echter Listener.
+	// Open port: a real listener.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestProbePortEchteSockets(t *testing.T) {
 		t.Fatalf("offener Port nicht erkannt: %+v", got)
 	}
 
-	// Geschlossener Port: derselbe Rechner, aber niemand hoert zu.
+	// Closed port: the same machine, but nobody is listening.
 	ln2, _ := net.Listen("tcp", "127.0.0.1:0")
 	zu := ln2.Addr().(*net.TCPAddr).Port
 	ln2.Close()
@@ -42,7 +42,7 @@ func TestProbePortEchteSockets(t *testing.T) {
 		t.Fatalf("Grund sollte 'abgelehnt' sein, ist %q", got.Grund)
 	}
 
-	// Keine Antwort: eine Adresse, die nicht routet.
+	// No answer: an address that does not route.
 	got = probePort("192.0.2.1", 322, 300*time.Millisecond)
 	if got.Offen {
 		t.Fatal("nicht erreichbare Adresse als offen gemeldet")
@@ -52,8 +52,8 @@ func TestProbePortEchteSockets(t *testing.T) {
 	}
 }
 
-// Das Urteil ist der eigentliche Nutzen: es soll dem Anwender sagen, wo er
-// suchen muss. Diese Faelle bilden genau die Lage aus dem go2rtc-Log ab.
+// The verdict is the real value: it should tell the user where to
+// look. These cases mirror exactly the situation from the go2rtc log.
 func TestUrteil(t *testing.T) {
 	p := func(port int, offen bool, grund string) portResult {
 		return portResult{Port: port, Offen: offen, Grund: grund}
@@ -86,8 +86,8 @@ func TestUrteil(t *testing.T) {
 	}
 }
 
-// Drei Ports werden gleichzeitig geprueft — sonst dauert ein Durchlauf ueber
-// 42 Drucker mit je 3 Sekunden Wartezeit unzumutbar lange.
+// Three ports are checked at once — otherwise a run over
+// 42 printers with 3 seconds each takes unreasonably long.
 func TestCheckPrinterParallel(t *testing.T) {
 	start := time.Now()
 	r := checkPrinter(Printer{IP: "192.0.2.1", Name: "tot"}, 700*time.Millisecond)

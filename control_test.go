@@ -16,7 +16,7 @@ func TestTempGcode(t *testing.T) {
 		{"nozzle", 220, "M104 S220", false},
 		{"bed", 60, "M140 S60", false},
 		{"nozzle", 0, "M104 S0", false},
-		{"nozzle", 350, "", true}, // ueber Grenze
+		{"nozzle", 350, "", true}, // over the limit
 		{"bed", 130, "", true},
 		{"nozzle", -5, "", true},
 		{"kammer", 50, "", true}, // unbekannt
@@ -59,7 +59,7 @@ func TestNormFarbe(t *testing.T) {
 		"xyz":      "00000000",
 	}
 	for ein, will := range f {
-		if got := normFarbe(ein); got != will {
+		if got := normColor(ein); got != will {
 			t.Fatalf("%q -> %q, erwartet %q", ein, got, will)
 		}
 	}

@@ -9,15 +9,15 @@ import (
 
 // ─── MITHOEREN STATT NUR FRAGEN ───────────────────────────────────────────────
 //
-// Die bisherige Suche hat M-SEARCH verschickt und auf Antworten an ihrem
-// eigenen, zufaellig gewaehlten Port gewartet. Das setzt voraus, dass die
-// Geraete auf M-SEARCH ueberhaupt antworten — und genau das tun sie
-// offenbar nicht zuverlaessig.
+// The previous search sent M-SEARCH and waited for responses on its
+// own randomly chosen port. That assumes the
+// devices answer M-SEARCH at all — and that is exactly what they
+// apparently do not do reliably.
 //
-// Drucker melden sich von sich aus: in regelmaessigen Abstaenden schicken sie
-// eine NOTIFY-Nachricht an 239.255.255.250:2021. Wer die hoeren will, muss auf
-// Port 2021 lauschen und der Multicast-Gruppe beitreten. Das passiert hier —
-// dauerhaft im Hintergrund, damit auch ein IP-Wechsel von selbst auffaellt.
+// Printers announce themselves: at regular intervals they send
+// a NOTIFY message to 239.255.255.250:2021. To hear it you must
+// listen on port 2021 and join the multicast group. That happens here —
+// permanently in the background, so an IP change is noticed on its own.
 
 type gehoert struct {
 	Drucker   DiscoveredPrinter
@@ -27,29 +27,29 @@ type gehoert struct {
 var (
 	lauschMu      sync.Mutex
 	lauschFunde   = map[string]gehoert{} // Seriennummer -> zuletzt gehoert
-	lauschPakete  int                    // alle UDP-Pakete, auch fremde
-	lauschSockets []string               // welche Sockets offen sind
-	lauschFehler  []string               // und welche nicht
+	lauschPakete  int                    // all UDP packets, including foreign
+	lauschSockets []string               // which sockets are open
+	lauschFehler  []string               // and which are not
 )
 
-// startDiscoveryListener oeffnet so viele Empfangswege wie moeglich und laesst
-// sie offen. Scheitert einer, laufen die anderen weiter — auf einem Rechner mit
-// mehreren Netzkarten oder strenger Firewall ist das der Normalfall.
+// startDiscoveryListener opens as many receive paths as possible and leaves
+// them open. If one fails, the others keep running — on a machine with
+// multiple NICs or a strict firewall this is the normal case.
 func startDiscoveryListener() {
-	// 1. Allgemeiner Empfang: faengt Broadcast und Unicast auf Port 2021.
+	// 1. General receive: catches broadcast and unicast on port 2021.
 	if c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: ssdpPort}); err == nil {
-		merkeSocket("0.0.0.0:2021 (Broadcast)")
+		noteSocket("0.0.0.0:2021 (Broadcast)")
 		go lauschAuf(c, "broadcast")
 	} else {
-		merkeFehler("0.0.0.0:2021: " + err.Error())
+		noteError("0.0.0.0:2021: " + err.Error())
 	}
 
-	// 2. Multicast je Netzkarte. Ohne Gruppenbeitritt kommen die NOTIFY-Pakete
-	//    gar nicht erst bei uns an.
+	// 2. Multicast per NIC. Without joining the group the NOTIFY packets
+	//    do not even reach us.
 	gruppe := &net.UDPAddr{IP: net.ParseIP(ssdpMulticast), Port: ssdpPort}
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		merkeFehler("Netzkarten nicht lesbar: " + err.Error())
+		noteError("Netzkarten nicht lesbar: " + err.Error())
 		return
 	}
 	for _, ifi := range ifaces {
@@ -61,23 +61,23 @@ func startDiscoveryListener() {
 		}
 		c, err := net.ListenMulticastUDP("udp4", &ifi, gruppe)
 		if err != nil {
-			merkeFehler(ifi.Name + ": " + err.Error())
+			noteError(ifi.Name + ": " + err.Error())
 			continue
 		}
 		c.SetReadBuffer(1 << 20)
-		merkeSocket(ifi.Name + " → " + ssdpMulticast + ":2021")
+		noteSocket(ifi.Name + " → " + ssdpMulticast + ":2021")
 		go lauschAuf(c, ifi.Name)
 	}
 }
 
-func merkeSocket(s string) {
+func noteSocket(s string) {
 	lauschMu.Lock()
 	lauschSockets = append(lauschSockets, s)
 	lauschMu.Unlock()
 	log.Printf("Suche: hoere mit auf %s", s)
 }
 
-func merkeFehler(s string) {
+func noteError(s string) {
 	lauschMu.Lock()
 	lauschFehler = append(lauschFehler, s)
 	lauschMu.Unlock()
@@ -111,8 +111,8 @@ func lauschAuf(c *net.UDPConn, wo string) {
 	}
 }
 
-// gehoerteDrucker liefert, was in den letzten Minuten zu hoeren war.
-func gehoerteDrucker(maxAlter time.Duration) []DiscoveredPrinter {
+// heardPrinters returns what was heard in the last few minutes.
+func heardPrinters(maxAlter time.Duration) []DiscoveredPrinter {
 	lauschMu.Lock()
 	defer lauschMu.Unlock()
 	var out []DiscoveredPrinter
@@ -124,8 +124,8 @@ func gehoerteDrucker(maxAlter time.Duration) []DiscoveredPrinter {
 	return out
 }
 
-// lauschBericht sagt, ob ueberhaupt etwas ankommt. Ohne diese Auskunft ist
-// "es findet nichts" nicht von "es hoert nichts" zu unterscheiden.
+// lauschBericht reports whether anything arrives at all. Without it
+// "it finds nothing" cannot be told from "it hears nothing".
 func lauschBericht() map[string]any {
 	lauschMu.Lock()
 	defer lauschMu.Unlock()

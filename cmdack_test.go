@@ -6,16 +6,16 @@ import (
 	"time"
 )
 
-// Die Quittung ist der Kern der Reparatur: ein Befehl gilt erst als erledigt,
-// wenn der Drucker ihn bestaetigt. Vorher galt "abgeschickt" als "erledigt" —
-// deshalb meldete die Oberflaeche Erfolg, waehrend nichts geschah.
+// The acknowledgement is the core of the fix: a command is done only
+// when the printer confirms it. Previously "sent" counted as "done" —
+// so the UI reported success while nothing happened.
 func TestQuittungErfolg(t *testing.T) {
 	ip := "10.1.1.1"
-	warten := warteAufQuittung(ip, "pause", "9001")
-	pruefeQuittung(ip, []byte(`{"print":{"command":"pause","sequence_id":"9001","result":"success","reason":""}}`))
+	warten := waitForAck(ip, "pause", "9001")
+	checkAck(ip, []byte(`{"print":{"command":"pause","sequence_id":"9001","result":"success","reason":""}}`))
 	select {
 	case a := <-warten:
-		if err := deuteQuittung(a, true); err != nil {
+		if err := interpretAck(a, true); err != nil {
 			t.Fatalf("Erfolg wurde als Fehler gedeutet: %v", err)
 		}
 	case <-time.After(time.Second):
@@ -25,10 +25,10 @@ func TestQuittungErfolg(t *testing.T) {
 
 func TestQuittungAblehnung(t *testing.T) {
 	ip := "10.1.1.2"
-	warten := warteAufQuittung(ip, "stop", "9002")
-	pruefeQuittung(ip, []byte(`{"print":{"command":"stop","sequence_id":"9002","result":"FAIL","reason":"device is busy"}}`))
+	warten := waitForAck(ip, "stop", "9002")
+	checkAck(ip, []byte(`{"print":{"command":"stop","sequence_id":"9002","result":"FAIL","reason":"device is busy"}}`))
 	a := <-warten
-	err := deuteQuittung(a, true)
+	err := interpretAck(a, true)
 	if err == nil {
 		t.Fatal("Ablehnung wurde als Erfolg gedeutet")
 	}
@@ -37,11 +37,11 @@ func TestQuittungAblehnung(t *testing.T) {
 	}
 }
 
-// Der wichtigste Fall: der Drucker schweigt. Genau das passiert, solange er mit
-// der Herstellercloud verbunden ist — er nimmt Statusabfragen an, aber keine
-// Steuerbefehle, und antwortet auf sie gar nicht.
+// The most important case: the printer is silent. Exactly that happens while it
+// is connected to the vendor cloud — it accepts status queries but no
+// control commands, and does not answer them at all.
 func TestQuittungSchweigenWirdErklaert(t *testing.T) {
-	err := deuteQuittung(cmdAntwort{}, false)
+	err := interpretAck(cmdResponse{}, false)
 	if err == nil {
 		t.Fatal("Schweigen muss ein Fehler sein")
 	}
@@ -52,19 +52,19 @@ func TestQuittungSchweigenWirdErklaert(t *testing.T) {
 	}
 }
 
-// Eine Antwort auf einen anderen Befehl darf den Warter nicht wecken.
+// A reply to a different command must not wake the waiter.
 func TestQuittungFremderBefehlWecktNicht(t *testing.T) {
 	ip := "10.1.1.3"
-	warten := warteAufQuittung(ip, "pause", "9003")
-	pruefeQuittung(ip, []byte(`{"print":{"command":"resume","sequence_id":"9003","result":"success"}}`))
-	pruefeQuittung(ip, []byte(`{"print":{"command":"pause","sequence_id":"9099","result":"success"}}`))
+	warten := waitForAck(ip, "pause", "9003")
+	checkAck(ip, []byte(`{"print":{"command":"resume","sequence_id":"9003","result":"success"}}`))
+	checkAck(ip, []byte(`{"print":{"command":"pause","sequence_id":"9099","result":"success"}}`))
 	select {
 	case <-warten:
 		t.Fatal("falsche Antwort hat den Warter geweckt")
 	case <-time.After(200 * time.Millisecond):
 	}
-	// Die richtige Antwort kommt durch
-	pruefeQuittung(ip, []byte(`{"print":{"command":"pause","sequence_id":"9003","result":"success"}}`))
+	// The correct reply comes through
+	checkAck(ip, []byte(`{"print":{"command":"pause","sequence_id":"9003","result":"success"}}`))
 	select {
 	case <-warten:
 	case <-time.After(time.Second):
@@ -72,13 +72,13 @@ func TestQuittungFremderBefehlWecktNicht(t *testing.T) {
 	}
 }
 
-// Statusmeldungen ohne "result" duerfen nichts ausloesen — davon kommen
+// Status messages without "result" must trigger nothing — many of
 // hunderte pro Minute.
 func TestQuittungIgnoriertStatusmeldungen(t *testing.T) {
 	ip := "10.1.1.4"
-	warten := warteAufQuittung(ip, "pause", "9004")
-	pruefeQuittung(ip, []byte(`{"print":{"gcode_state":"RUNNING","mc_percent":42}}`))
-	pruefeQuittung(ip, []byte(`{"print":{"command":"push_status","sequence_id":"1"}}`))
+	warten := waitForAck(ip, "pause", "9004")
+	checkAck(ip, []byte(`{"print":{"gcode_state":"RUNNING","mc_percent":42}}`))
+	checkAck(ip, []byte(`{"print":{"command":"push_status","sequence_id":"1"}}`))
 	select {
 	case <-warten:
 		t.Fatal("Statusmeldung wurde als Quittung gewertet")
@@ -86,11 +86,11 @@ func TestQuittungIgnoriertStatusmeldungen(t *testing.T) {
 	}
 }
 
-// Die Firmware ab 01.08.05 lehnt Fremdsteuerung mit "mqtt message verify
-// failed" ab. Der Anwender soll nicht die Originalmeldung sehen, sondern den
-// Hinweis auf den Developer Mode.
+// Firmware from 01.08.05 rejects external control with "mqtt message verify
+// failed". The user should not see the original message but the
+// hint about Developer Mode.
 func TestQuittungVerifyFehlerNenntDeveloperMode(t *testing.T) {
-	err := deuteQuittung(cmdAntwort{Result: "failed", Reason: "mqtt message verify failed"}, true)
+	err := interpretAck(cmdResponse{Result: "failed", Reason: "mqtt message verify failed"}, true)
 	if err == nil {
 		t.Fatal("verify-Fehler muss ein Fehler sein")
 	}

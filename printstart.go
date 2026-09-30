@@ -10,30 +10,30 @@ import (
 
 // ─── DRUCK STARTEN ────────────────────────────────────────────────────────────
 //
-// Der Befehl heisst project_file und erwartet einen Pfad auf dem Geraet. Fuer
-// oertliche Auftraege sind project_id, profile_id, task_id und subtask_id
-// jeweils "0"; das ist so vorgesehen und nicht etwa ein Platzhalter.
+// The command is project_file and expects a path on the device. For
+// local jobs project_id, profile_id, task_id and subtask_id
+// are each "0"; that is intended and not a placeholder.
 //
-// Zur Farbzuordnung: ams_mapping ordnet den Farben der Datei die Faecher zu und
-// wird von hinten gefuellt — bei einer Farbe also [-1,-1,-1,-1,fach]. Wie viele
-// Farben eine Datei braucht, steht allerdings in der Datei selbst (im 3MF), und
-// die liegt auf dem Drucker. Deshalb wird hier nur die einfarbige Zuordnung
-// angeboten; alles andere waere geraten.
+// On color mapping: ams_mapping maps the file's colors to the trays and
+// is filled from the back — for one color [-1,-1,-1,-1,tray]. How many
+// colors a file needs is however inside the file itself (in the 3MF), and
+// that lives on the printer. So only the single-color mapping is
+// offered; anything else would be guessing.
 
 type printStartReq struct {
 	IP        string `json:"ip"`
 	Datei     string `json:"datei"`
 	UseAMS    bool   `json:"use_ams"`
 	Fach      int    `json:"fach"`              // AMS-Fach global, -1 = externe Rolle
-	Mapping   []int  `json:"mapping,omitempty"` // Farbe->Fach, -1 = nicht zuordnen
+	Mapping   []int  `json:"mapping,omitempty"` // color->tray, -1 = do not map
 	Timelapse bool   `json:"timelapse"`
 	Leveling  bool   `json:"leveling"`
 	FlowCali  bool   `json:"flow_cali"`
 }
 
-// amsMapping baut die Zuordnungsliste fuer einen einfarbigen Auftrag.
-// amsMappingListe baut die Zuordnung aus mehreren Farben. Die Liste hat feste
-// Laenge 16 (mehr Faecher gibt es nicht), links mit -1 aufgefuellt.
+// amsMapping builds the mapping list for a single-color job.
+// amsMappingListe builds the mapping from several colors. The list has fixed
+// length 16 (there are no more trays), padded with -1 on the left.
 func amsMappingListe(faecher []int) string {
 	m := make([]int, 0, len(faecher))
 	for _, f := range faecher {
@@ -58,8 +58,8 @@ func projectFilePayload(r printStartReq, seq string) (string, error) {
 	if datei == "" {
 		return "", fmt.Errorf("keine Datei angegeben")
 	}
-	// Pfadtrenner und Rueckwaertsschritte sind hier so wenig erwuenscht wie
-	// beim Loeschen — der Name kommt aus einer Liste, nicht aus der Fantasie.
+	// Path separators and backtracking are as unwanted here as
+	// when deleting — the name comes from a list, not from imagination.
 	if strings.ContainsAny(datei, `/\`) || strings.Contains(datei, "..") {
 		return "", fmt.Errorf("unzulässiger Dateiname %q", datei)
 	}
@@ -71,8 +71,8 @@ func projectFilePayload(r printStartReq, seq string) (string, error) {
 	mapping := "[]"
 	useAMS := r.UseAMS
 	if len(r.Mapping) > 0 {
-		// Von den Farben nur die tatsaechlich zugeordneten behalten; das
-		// Protokoll fuellt die Liste rechtsbuendig und links mit -1 auf.
+		// Keep only the actually mapped colors; the
+		// protocol fills the list right-aligned and pads left with -1.
 		mapping = amsMappingListe(r.Mapping)
 		for _, v := range r.Mapping {
 			if v >= 0 {
@@ -83,10 +83,10 @@ func projectFilePayload(r printStartReq, seq string) (string, error) {
 		mapping = amsMapping(r.Fach)
 	}
 
-	// Zwei verschiedene Befehle je nach Dateiart. Das war die Ursache des
-	// Fehlers 0x07FF8012: eine rohe .gcode-Datei hat keinen internen Pfad
-	// "Metadata/plate_1.gcode" — der steckt nur in einem .3mf-Archiv. Fuer
-	// .gcode ist der Befehl "gcode_file" mit dem Dateinamen der richtige.
+	// Two different commands depending on file type. This caused
+	// error 0x07FF8012: a raw .gcode file has no internal path
+	// "Metadata/plate_1.gcode" — that only exists in a .3mf archive. For
+	// .gcode the correct command is "gcode_file" with the file name.
 	istGcode := strings.HasSuffix(strings.ToLower(datei), ".gcode")
 
 	if istGcode {
@@ -94,8 +94,8 @@ func projectFilePayload(r printStartReq, seq string) (string, error) {
 			"print": map[string]any{
 				"sequence_id": seq,
 				"command":     "gcode_file",
-				// Laut Protokoll nur der Dateiname, KEIN fuehrender Schraegstrich.
-				// Der Slash war die Ursache des Fehlers "unsupported path".
+				// Per protocol only the file name, NO leading slash.
+				// The slash caused the "unsupported path" error.
 				"param": datei,
 			},
 		}
@@ -166,7 +166,7 @@ func handlePrintStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Niemals einen laufenden Auftrag ueberschreiben.
+	// Never overwrite a running job.
 	if s := mqttMgr.GetStatus(kopie.IP); s != nil {
 		switch strings.ToUpper(s.GcodeState) {
 		case "RUNNING", "PAUSE", "PREPARE", "SLICING":
@@ -176,7 +176,7 @@ func handlePrintStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	seq := naechsteSeq()
+	seq := nextSeq()
 	payload, err := projectFilePayload(body, seq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

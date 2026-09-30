@@ -10,7 +10,7 @@ import (
 func TestCameraStreamsYaml(t *testing.T) {
 	cams := []CameraCfg{
 		{ID: "cw300", Name: "Außenkamera Büro", Stream: "cw300", Source: "xiaomi://u:p@192.168.1.9?did=1"},
-		{ID: "leer", Name: "x", Stream: "", Source: ""}, // unvollständig -> übersprungen
+		{ID: "leer", Name: "x", Stream: "", Source: ""}, // incomplete -> skipped
 	}
 	y := cameraStreamsYaml(cams)
 	if !strings.Contains(y, "  cw300:\n    - xiaomi://u:p@192.168.1.9?did=1\n") {
@@ -53,9 +53,9 @@ func TestCamerasAPIRoundtrip(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "cw300") {
 		t.Fatalf("GET falsch: %d %s", rec.Code, rec.Body.String())
 	}
-	// Snapshot löst Kamera-ID zu Streamname auf (kein 404 wg. unbekannt)
-	if kameraStreamName(id) != "cw300" {
-		t.Fatalf("kameraStreamName falsch: %q", kameraStreamName(id))
+	// Snapshot resolves camera ID to stream name (no 404 for unknown)
+	if cameraStreamName(id) != "cw300" {
+		t.Fatalf("cameraStreamName falsch: %q", cameraStreamName(id))
 	}
 	// DELETE
 	rec = httptest.NewRecorder()
@@ -69,8 +69,8 @@ func TestCamerasAPIRoundtrip(t *testing.T) {
 }
 
 func TestKameraNichtInDruckerzaehlung(t *testing.T) {
-	// Kameras liegen in state.Cameras, nicht in state.Printers — Druckerzählung
-	// und alles Druckerbezogene bleibt davon unberührt.
+	// Cameras live in state.Cameras, not state.Printers — the printer count
+	// and everything printer-related stays untouched by it.
 	state.Printers = []Printer{{Name: "A", IP: "10.0.0.1", Serial: "S", Model: "H2D"}}
 	state.Cameras = []CameraCfg{{ID: "cw300", Name: "Cam", Stream: "cw300", Source: "xiaomi://x@1.2.3.4"}}
 	if len(state.Printers) != 1 {
@@ -80,13 +80,13 @@ func TestKameraNichtInDruckerzaehlung(t *testing.T) {
 
 func TestKameraStreamDiagnoseGetrennt(t *testing.T) {
 	state.Cameras = []CameraCfg{{ID: "dowell3d", Name: "Dowell", Stream: "dowell3d", Source: "xiaomi://x@1.2.3.4"}}
-	if !istKameraStream("dowell3d") {
+	if !isCameraStream("dowell3d") {
 		t.Fatal("dowell3d sollte als Kamera-Stream erkannt werden")
 	}
-	if istKameraStream("halle-1") {
+	if isCameraStream("halle-1") {
 		t.Fatal("Drucker-Stream fälschlich als Kamera erkannt")
 	}
-	msg := kameraStreamDiagnose("dowell3d")
+	msg := cameraStreamDiagnostics("dowell3d")
 	if strings.Contains(msg, "Drucker") {
 		t.Fatalf("Kamera-Diagnose darf nicht von Druckern reden: %q", msg)
 	}
@@ -97,8 +97,8 @@ func TestKameraStreamDiagnoseGetrennt(t *testing.T) {
 }
 
 func TestKameraSnapshotKein503(t *testing.T) {
-	// Kamera ohne erreichbares go2rtc → Snapshot schlägt fehl. Für Kameras darf
-	// das KEIN 503 sein (sonst roter Konsolenfehler), sondern 200 + Hinweis.
+	// Camera without reachable go2rtc → snapshot fails. For cameras this must
+	// NOT be a 503 (otherwise a red console error), but 200 + hint.
 	state.Printers = nil
 	state.Cameras = []CameraCfg{{ID: "dowell3d", Name: "Dowell", Stream: "dowell3d", Source: "xiaomi://x@1.2.3.4"}}
 	req := httptest.NewRequest(http.MethodGet, "/api/snapshot/dowell3d?max_age=2", nil)
@@ -114,8 +114,8 @@ func TestKameraSnapshotKein503(t *testing.T) {
 }
 
 func TestErhalteFremdeSektionen(t *testing.T) {
-	// Simuliert eine go2rtc.yaml, in die go2rtc beim Mi-Home-Login ein eigenes
-	// Konto/Token geschrieben hat. api/streams sind unsere; das Konto muss
+	// Simulates a go2rtc.yaml into which go2rtc wrote its own
+	// account/token on Mi-Home login. api/streams are ours; the account must
 	// erhalten bleiben.
 	vorhanden := "# go2rtc.yaml\n\napi:\n  origin: '*'\n\nstreams:\n  alt: rtsp://x\n\nxiaomi:\n  6782331241:\n    token: GEHEIM\n    region: de\n"
 	fremd := erhalteFremdeSektionen(vorhanden)
@@ -125,7 +125,7 @@ func TestErhalteFremdeSektionen(t *testing.T) {
 	if strings.Contains(fremd, "origin:") || strings.Contains(fremd, "alt: rtsp") {
 		t.Fatalf("verwaltete Abschnitte (api/streams) dürfen NICHT übernommen werden: %q", fremd)
 	}
-	// Neue Datei = unsere Abschnitte + erhaltener Fremdteil
+	// New file = our sections + preserved foreign part
 	neu := buildYaml([]Printer{{Name: "A", IP: "10.0.0.1", Code: "c", Model: "H2D"}}, nil) + fremd
 	if !strings.Contains(neu, "xiaomi:") || !strings.Contains(neu, "streams:") {
 		t.Fatalf("Zusammenbau falsch: %q", neu)
@@ -134,12 +134,12 @@ func TestErhalteFremdeSektionen(t *testing.T) {
 
 func TestNeueKameraGeneration(t *testing.T) {
 	for _, m := range []string{"H2D", "X2D", "P2S", "h2s"} {
-		if !neueKameraGeneration(m) {
+		if !newCameraGeneration(m) {
 			t.Fatalf("%s sollte neue Generation sein", m)
 		}
 	}
 	for _, m := range []string{"X1C", "X1E", "P1S", "A1", "A1 MINI", ""} {
-		if neueKameraGeneration(m) {
+		if newCameraGeneration(m) {
 			t.Fatalf("%s sollte NICHT neue Generation sein", m)
 		}
 	}

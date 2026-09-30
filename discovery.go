@@ -15,16 +15,16 @@ import (
 
 // ─── DRUCKERSUCHE IM NETZ ─────────────────────────────────────────────────────
 //
-// Die Drucker antworten auf SSDP-M-SEARCH — allerdings auf Port 2021, nicht auf
+// The printers respond to SSDP M-SEARCH — but on port 2021, not on
 // dem ueblichen 1900. Die Antwort kommt als Unicast zurueck ("HTTP/1.1 200 OK")
-// und traegt die Geraetedaten in eigenen Kopfzeilen: DevModel, DevName,
-// DevConnect, DevBind, USN (Seriennummer) und DevVersion.
+// and carry the device data in custom headers: DevModel, DevName,
+// DevConnect, DevBind, USN (serial number) and DevVersion.
 //
-// Zwei Dinge sind dabei wichtig:
-//   - UDP geht verloren. Bei ~36 Geraeten im Netz reicht ein einzelner Versuch
-//     nicht, deshalb wird mehrfach gesendet.
+// Two things matter here:
+//   - UDP gets lost. With ~36 devices on the network a single attempt is
+//     not enough, so it is sent multiple times.
 //   - Der Suchtyp bleibt "ssdp:all". Damit antwortet jedes SSDP-Geraet; gefiltert
-//     wird ueber die Kopfzeilen, die nur Drucker mitschicken.
+//     via the headers only printers send.
 
 const (
 	ssdpPort             = 2021
@@ -40,10 +40,10 @@ type DiscoveredPrinter struct {
 	Connect string `json:"connect"` // lan / cloud
 	Bind    string `json:"bind"`    // free / occupied
 	Version string `json:"version"`
-	Known   bool   `json:"known"` // steht schon in der Druckerliste
+	Known   bool   `json:"known"` // already in the printer list
 
-	// Umgezogen: dieselbe Seriennummer ist bekannt, aber unter anderer Adresse.
-	// Genau dieser Fall hat die halbe Farm lahmgelegt, ohne dass es jemand
+	// Moved: the same serial number is known, but at a different address.
+	// Exactly this case paralysed half the farm without anyone
 	// sehen konnte.
 	Umgezogen bool   `json:"umgezogen,omitempty"`
 	AlteIP    string `json:"alte_ip,omitempty"`
@@ -57,9 +57,9 @@ func buildMSearch(host string) []byte {
 		"ST: ssdp:all\r\n\r\n")
 }
 
-// parseSSDPResponse liest eine Antwort. Der zweite Rueckgabewert ist false,
-// wenn es sich erkennbar nicht um einen Drucker handelt — im Netz antworten
-// auch Router, Fernseher und Drucker anderer Bauart auf SSDP.
+// parseSSDPResponse parses a response. The second return value is false
+// when it is recognisably not a printer — on the network
+// routers, TVs and other kinds of printers also answer SSDP.
 func parseSSDPResponse(data []byte, srcIP string) (DiscoveredPrinter, bool) {
 	text := string(data)
 	if !strings.HasPrefix(strings.ToUpper(text), "HTTP/1.1 200") &&
@@ -79,8 +79,8 @@ func parseSSDPResponse(data []byte, srcIP string) (DiscoveredPrinter, bool) {
 		headers[key] = strings.TrimSpace(line[i+1:])
 	}
 
-	// Je nach Firmware heissen die Felder "DevModel" oder "DevModel.suffix" —
-	// deshalb wird nach dem Anfang der Kopfzeile gesucht, nicht exakt verglichen.
+	// Depending on firmware the fields are "DevModel" or "DevModel.suffix" —
+	// so the header prefix is searched for, not compared exactly.
 	get := func(prefix string) string {
 		if v, ok := headers[prefix]; ok {
 			return v
@@ -108,17 +108,17 @@ func parseSSDPResponse(data []byte, srcIP string) (DiscoveredPrinter, bool) {
 		}
 	}
 
-	// Ohne Modell und Seriennummer ist es kein Geraet, mit dem wir etwas anfangen
-	// koennen — damit fallen fremde SSDP-Teilnehmer heraus.
+	// Without model and serial it is not a device we can do anything with
+	// — this drops foreign SSDP participants.
 	if d.Model == "" || d.Serial == "" {
 		return DiscoveredPrinter{}, false
 	}
 	return d, true
 }
 
-// searchTargets liefert die Adressen, an die gesucht wird: die SSDP-Multicast-
-// Adresse plus die Broadcast-Adresse jedes aktiven IPv4-Netzes. Letzteres hilft
-// in Netzen, in denen Multicast zwischen Switches nicht durchgereicht wird.
+// searchTargets returns the addresses to search: the SSDP multicast
+// address plus the broadcast address of each active IPv4 network. The latter helps
+// on networks where multicast is not forwarded between switches.
 func searchTargets() []string {
 	targets := []string{fmt.Sprintf("%s:%d", ssdpMulticast, ssdpPort)}
 	ifaces, err := net.Interfaces()
@@ -163,8 +163,8 @@ func broadcastAddr(n *net.IPNet) net.IP {
 	return bc
 }
 
-// discoverPrinters sendet mehrfach und sammelt die Antworten bis zum Ablauf des
-// Zeitfensters ein.
+// discoverPrinters sends multiple times and collects the responses until the
+// time window elapses.
 func discoverPrinters(targets []string, rounds int, window time.Duration) ([]DiscoveredPrinter, error) {
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
@@ -210,7 +210,7 @@ func discoverPrinters(targets []string, rounds int, window time.Duration) ([]Dis
 		}
 	}()
 
-	// Mehrfach senden: ein einzelnes Paket geht bei vielen Geraeten im Netz
+	// Send multiple times: a single packet gets lost with many devices on the net
 	// verlaesslich irgendwo verloren.
 	for r := 0; r < rounds; r++ {
 		for _, t := range targets {
@@ -238,7 +238,7 @@ func discoverPrinters(targets []string, rounds int, window time.Duration) ([]Dis
 	return out, nil
 }
 
-// Nur eine Suche gleichzeitig — sonst schickt ein hektischer Klick auf den Knopf
+// Only one search at a time — otherwise a frantic click on the button sends
 // mehrfach Suchpakete an alle Geraete im Netz.
 var discoverMu sync.Mutex
 
@@ -262,9 +262,9 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Dazu alles, was der Dauerlauscher in den letzten Minuten gehoert hat.
-	// Viele Geraete antworten nicht auf M-SEARCH, melden sich aber von selbst —
-	// ohne diesen Teil blieb die Suche leer.
+	// Plus everything the continuous listener heard in the last few minutes.
+	// Many devices do not answer M-SEARCH but announce themselves —
+	// without this part the search stayed empty.
 	nachSerie := map[string]DiscoveredPrinter{}
 	for _, d := range list {
 		schluessel := d.Serial
@@ -274,7 +274,7 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 		nachSerie[schluessel] = d
 	}
 	ausMithoeren := 0
-	for _, d := range gehoerteDrucker(10 * time.Minute) {
+	for _, d := range heardPrinters(10 * time.Minute) {
 		schluessel := d.Serial
 		if schluessel == "" {
 			schluessel = d.IP
@@ -295,7 +295,7 @@ func handleDiscover(w http.ResponseWriter, r *http.Request) {
 		return list[a].IP < list[b].IP
 	})
 
-	// Bekannte markieren — und dabei den Fall herausarbeiten, der uns die H-Reihe
+	// Mark known ones — and work out the case that got the H series
 	// gekostet hat: dieselbe Seriennummer unter neuer Adresse.
 	mu.Lock()
 	knownIP := map[string]bool{}

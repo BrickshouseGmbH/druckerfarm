@@ -20,24 +20,24 @@ import (
 
 // ─── EXTERNE KOMPONENTEN ──────────────────────────────────────────────────────
 //
-// go2rtc und ffmpeg werden nicht mehr ins Exe eingebettet, sondern bei Bedarf
-// heruntergeladen. Die App läuft auch ohne beide: Drucker anlegen, MQTT-Status
-// und Datei-Sync funktionieren, nur Video bzw. Snapshots fehlen dann.
+// go2rtc and ffmpeg are no longer embedded in the exe but downloaded on
+// demand. The app runs without either: adding printers, MQTT status
+// and file sync work, only video/snapshots are missing then.
 //
-//   go2rtc  → Video (WebRTC) und Snapshots
-//   ffmpeg  → nur Snapshots; go2rtc braucht es, um H264 nach JPEG zu wandeln
+//   go2rtc  → video (WebRTC) and snapshots
+//   ffmpeg  → snapshots only; go2rtc needs it to convert H264 to JPEG
 
 const go2rtcVersion = "v1.9.14"
 
-// Als Variablen, damit die Tests sie auf einen lokalen Server umbiegen koennen.
+// As variables so tests can point them at a local server.
 var (
 	go2rtcURL = "https://github.com/AlexxIT/go2rtc/releases/download/" + go2rtcVersion + "/go2rtc_win64.zip"
-	// Fester Release-Tag, deshalb ist der Hash pinnbar.
+	// Fixed release tag, so the hash is pinnable.
 	go2rtcSHA256 = "dd4167d75cb04abe618855b7c71f8658bd009f60c1a71835d134d2c11c939907"
 
-	// BtbN veroeffentlicht unter dem rollenden Tag "latest" staendig neu gebaute
-	// Archive. Ein fester Hash wuerde nach jedem Rebuild brechen — stattdessen
-	// wird die mitveroeffentlichte Pruefsummenliste geladen und daraus geprueft.
+	// BtbN continuously publishes freshly built archives under the rolling tag
+	// "latest". A fixed hash would break after every rebuild — instead
+	// the co-published checksum list is loaded and used for verification.
 	ffmpegAsset        = "ffmpeg-master-latest-win64-lgpl-shared.zip"
 	ffmpegURL          = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/" + ffmpegAsset
 	ffmpegChecksumsURL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256"
@@ -85,8 +85,8 @@ func fileExists(p string) bool {
 	return err == nil && !st.IsDir() && st.Size() > 0
 }
 
-// toolVersion ruft "<bin> -version" auf und gibt die erste Zeile zurück. Dient
-// zugleich als Funktionsprüfung nach dem Download.
+// toolVersion calls "<bin> -version" and returns the first line. Also
+// serves as a functional check after the download.
 func toolVersion(bin string, args ...string) string {
 	if !fileExists(bin) {
 		return ""
@@ -124,7 +124,7 @@ func componentList() []componentStatus {
 		ff.Installed = true
 		ff.Version = toolVersion(ff.Path, "-version")
 	} else if p, err := exec.LookPath("ffmpeg"); err == nil {
-		// Schon systemweit vorhanden — dann kein Download nötig.
+		// Already present system-wide — then no download needed.
 		ff.Installed = true
 		ff.Path = p
 		ff.Version = toolVersion(p, "-version")
@@ -133,9 +133,9 @@ func componentList() []componentStatus {
 	return []componentStatus{g2, ff}
 }
 
-// envWithFFmpeg hängt das lokale ffmpeg-Verzeichnis vorne an den PATH des
-// Kindprozesses, damit go2rtc es findet, ohne dass am System-PATH etwas
-// geändert werden muss.
+// envWithFFmpeg prepends the local ffmpeg directory to the child process's
+// PATH so go2rtc finds it without changing anything on the system
+// PATH.
 func envWithFFmpeg() []string {
 	dir := ffmpegDir()
 	if !fileExists(ffmpegBinPath()) {
@@ -184,8 +184,8 @@ func download(url, dest string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("HTTP %d von %s", resp.StatusCode, url)
 	}
-	// Ohne Content-Length (chunked) lieber 0 melden als -1 — das UI zeigt dann
-	// einen unbestimmten Balken statt einer negativen Prozentzahl.
+	// Without Content-Length (chunked) report 0 rather than -1 — the UI then
+	// shows an indeterminate bar instead of a negative percentage.
 	total := resp.ContentLength
 	if total < 0 {
 		total = 0
@@ -206,8 +206,8 @@ func download(url, dest string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// expectedFFmpegSHA holt die Prüfsummenliste des Releases und sucht den Eintrag
-// für unser Archiv heraus.
+// expectedFFmpegSHA fetches the release checksum list and finds the entry
+// for our archive.
 func expectedFFmpegSHA() (string, error) {
 	resp, err := dlClient.Get(ffmpegChecksumsURL)
 	if err != nil {
@@ -230,9 +230,9 @@ func expectedFFmpegSHA() (string, error) {
 	return "", fmt.Errorf("kein Prüfsummen-Eintrag für %s", ffmpegAsset)
 }
 
-// unzipSelected entpackt genau die Einträge, für die pick einen Zieldateinamen
-// liefert. Zip-Slip ist damit ausgeschlossen, weil der Zielname nie aus dem
-// Archiv übernommen wird.
+// unzipSelected extracts exactly the entries for which pick returns a target
+// filename. Zip-Slip is thus impossible, because the target name never comes
+// from the archive.
 func unzipSelected(archive, destDir string, pick func(name string) (string, bool)) (int, error) {
 	zr, err := zip.OpenReader(archive)
 	if err != nil {
@@ -288,7 +288,7 @@ func installGo2rtc(tmpDir string) error {
 	}
 
 	setProgress(func(p *installProgress) { p.Step = "extract" })
-	stopGo2rtc() // laufende Instanz beenden, sonst ist die Datei gesperrt
+	stopGo2rtc() // stop the running instance, otherwise the file is locked
 	staging := filepath.Join(tmpDir, "go2rtc-out")
 	n, err := unzipSelected(archive, staging, func(name string) (string, bool) {
 		base := strings.ToLower(filepath.Base(name))
@@ -335,8 +335,8 @@ func installFFmpeg(tmpDir string) error {
 
 	setProgress(func(p *installProgress) { p.Step = "extract" })
 	staging := filepath.Join(tmpDir, "ffmpeg-out")
-	// Aus dem Shared-Build nur bin/ffmpeg.exe und die zugehörigen DLLs;
-	// ffplay, ffprobe, Header und Import-Libs bleiben draußen.
+	// From the shared build only bin/ffmpeg.exe and its DLLs;
+	// ffplay, ffprobe, headers and import libs stay out.
 	n, err := unzipSelected(archive, staging, func(name string) (string, bool) {
 		p := strings.ToLower(filepath.ToSlash(name))
 		if !strings.Contains(p, "/bin/") {
@@ -418,7 +418,7 @@ func runInstall(keys []string) {
 	})
 	log.Printf("✅ Komponenten installiert: %s", strings.Join(keys, ", "))
 
-	// go2rtc (neu) starten, damit es das frische ffmpeg im PATH sieht
+	// start go2rtc (fresh) so it sees the new ffmpeg on the PATH
 	go func() {
 		stopGo2rtc()
 		time.Sleep(500 * time.Millisecond)
@@ -520,10 +520,10 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 // ─── AKTUALISIERUNG DER KOMPONENTEN ───────────────────────────────────────────
 //
-// go2rtc traegt eine Versionsnummer, die sich mit dem neuesten GitHub-Release
-// vergleichen laesst. ffmpeg von BtbN nicht — dort wird unter einem rollenden
-// Tag staendig neu gebaut. Deshalb wird beim Installieren die Pruefsumme des
-// Archivs gemerkt und spaeter mit der veroeffentlichten verglichen.
+// go2rtc carries a version number that can be compared with the latest GitHub
+// release. ffmpeg from BtbN cannot — there it is continuously rebuilt under a
+// rolling tag. So on install the archive's checksum is
+// remembered and later compared with the published one.
 
 type componentUpdate struct {
 	Key       string `json:"key"`
@@ -550,7 +550,7 @@ func componentHash(key string) string {
 	return state.ComponentSHA[key]
 }
 
-// latestGo2rtcTag fragt das neueste Release ab.
+// latestGo2rtcTag queries the latest release.
 func latestGo2rtcTag() (string, error) {
 	req, _ := http.NewRequest("GET", "https://api.github.com/repos/AlexxIT/go2rtc/releases/latest", nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -572,12 +572,12 @@ func latestGo2rtcTag() (string, error) {
 	return strings.TrimSpace(rel.TagName), nil
 }
 
-// installedGo2rtcVersion liest die Version aus dem Programm selbst.
+// installedGo2rtcVersion reads the version from the program itself.
 func installedGo2rtcVersion() string {
 	return parseGo2rtcVersionLine(toolVersion(go2rtcBinPath(), "-version"))
 }
 
-// parseGo2rtcVersionLine zieht die Version aus "go2rtc version 1.9.14+dev.… windows/amd64".
+// parseGo2rtcVersionLine extracts the version from "go2rtc version 1.9.14+dev.… windows/amd64".
 func parseGo2rtcVersionLine(line string) string {
 	f := strings.Fields(line)
 	for i, w := range f {
@@ -610,7 +610,7 @@ func checkComponentUpdates() []componentUpdate {
 	}
 	out = append(out, g2)
 
-	// ffmpeg — Vergleich ueber die Pruefsumme des Archivs
+	// ffmpeg — compared via the archive's checksum
 	ff := componentUpdate{Key: "ffmpeg", Label: "ffmpeg"}
 	if fileExists(ffmpegBinPath()) {
 		have := componentHash("ffmpeg")
@@ -631,9 +631,9 @@ func checkComponentUpdates() []componentUpdate {
 	return out
 }
 
-// installGo2rtcLatest holt die neueste veroeffentlichte Fassung. Anders als bei
-// der Erstinstallation gibt es hier keine fest hinterlegte Pruefsumme — geprueft
-// wird stattdessen, dass die Datei startet und die erwartete Version meldet.
+// installGo2rtcLatest fetches the latest published build. Unlike the
+// initial install there is no hard-coded checksum here — instead it is
+// verified that the file starts and reports the expected version.
 func installGo2rtcLatest(tmpDir, tag string) error {
 	setProgress(func(p *installProgress) { p.Component = "go2rtc"; p.Step = "download" })
 
@@ -734,9 +734,9 @@ func runComponentUpdate(keys []string) {
 		setProgress(func(p *installProgress) { p.Active = false; p.Done = true; p.Step = "done"; p.Error = "" })
 	}
 
-	// In JEDEM Fall wieder starten. Zum Ersetzen der Datei wird go2rtc beendet —
-	// brach die Aktualisierung danach ab, blieb es vorher fuer immer gestoppt,
-	// und damit waren Videos und Snapshots weg.
+	// Restart in ANY case. To replace the file go2rtc is stopped —
+	// if the update then aborted, it previously stayed stopped forever,
+	// and video and snapshots were gone.
 	go func() {
 		stopGo2rtc()
 		time.Sleep(500 * time.Millisecond)

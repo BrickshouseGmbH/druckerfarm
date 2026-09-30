@@ -12,19 +12,19 @@ import (
 
 // ─── ERREICHBARKEIT ───────────────────────────────────────────────────────────
 //
-// Wenn kein Bild kommt, gibt es drei mögliche Gründe, und sie sehen in der
-// Oberfläche alle gleich aus: das Gerät ist aus, die Kamera ist aus, oder das
-// Programm hat einen Fehler. Diese Prüfung trennt die drei, indem sie die drei
-// Ports einzeln anklopft, auf die es ankommt:
+// When no image arrives there are three possible reasons, and in the UI they
+// all look the same: the device is off, the camera is off, or the
+// program has a bug. This check separates the three by knocking on the three
+// relevant ports individually:
 //
-//	322  RTSP  — die Kamera. Genau der Port, an dem go2rtc scheitert.
-//	990  FTPS  — der Dateizugriff.
-//	8883 MQTT  — Status und Steuerung.
+//	322  RTSP  — the camera. Exactly the port go2rtc fails on.
+//	990  FTPS  — file access.
+//	8883 MQTT  — status and control.
 //
-// Damit ist ohne Ratespiel ablesbar: antwortet gar nichts, ist das Gerät aus
-// oder nicht im selben Netz. Antworten 990 und 8883, aber 322 nicht, dann läuft
-// der Drucker und nur die Kamera ist abgeschaltet — das ist ein Schalter am
-// Gerät, kein Programmfehler.
+// This makes it readable without guessing: if nothing answers, the device is off
+// or not on the same network. If 990 and 8883 answer but 322 does not, the
+// printer is running and only the camera is off — that is a switch on the
+// device, not a program bug.
 
 type portResult struct {
 	Port  int    `json:"port"`
@@ -51,9 +51,9 @@ var reachPorts = []struct {
 	{8883, "Status"},
 }
 
-// probePort klopft an und übersetzt das Ergebnis. Die Unterscheidung zwischen
-// "keine Antwort" und "aktiv abgelehnt" ist die wichtigste Information
-// überhaupt: abgelehnt heißt, das Gerät lebt und nur der Dienst fehlt.
+// probePort knocks and translates the result. The distinction between
+// "no answer" and "actively refused" is the most important information
+// of all: refused means the device is alive and only the service is missing.
 func probePort(ip string, port int, timeout time.Duration) portResult {
 	res := portResult{Port: port}
 	start := time.Now()
@@ -92,7 +92,7 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
-// urteil fasst zusammen, was die drei Ports gemeinsam bedeuten.
+// urteil summarises what the three ports mean together.
 func urteil(ports []portResult) string {
 	offen := map[int]bool{}
 	abgelehnt := map[int]bool{}
@@ -133,8 +133,8 @@ func checkPrinter(p Printer, timeout time.Duration) reachResult {
 	return r
 }
 
-// handleReach prüft entweder einen Drucker (?ip=…) oder alle auf einmal.
-// Parallel, aber gedeckelt — 42 Geräte × 3 Ports gleichzeitig wäre unhöflich.
+// handleReach checks either one printer (?ip=…) or all at once.
+// Parallel but capped — 42 devices × 3 ports at once would be rude.
 func handleReach(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -178,11 +178,11 @@ func handleReach(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleReconnect stößt für EINEN Drucker eine frische MQTT-Verbindung an:
-// alte Verbindung trennen, dann neu aufbauen. Nützlich direkt nach dem
-// Bearbeiten oder beim manuellen Anpingen — so wird „gefunden, aber offline"
-// nicht durch eine hängengebliebene Verbindung verursacht. Antwortet mit einem
-// Hinweis, wenn die Seriennummer fehlt (dann ist MQTT-Status gar nicht möglich).
+// handleReconnect triggers a fresh MQTT connection for ONE printer:
+// drop the old connection, then rebuild. Useful right after
+// editing or during a manual ping — so "found but offline"
+// is not caused by a stuck connection. Replies with a
+// hint when the serial number is missing (then MQTT status is impossible).
 func handleReconnect(w http.ResponseWriter, r *http.Request) {
 	ip := r.URL.Query().Get("ip")
 	if ip == "" {

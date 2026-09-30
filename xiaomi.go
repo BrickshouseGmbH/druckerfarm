@@ -7,21 +7,21 @@ import (
 	"time"
 )
 
-// ─── XIAOMI / MI-HOME-LOGIN (im Tool, über go2rtc) ────────────────────────────
+// ─── XIAOMI / MI-HOME LOGIN (in the tool, via go2rtc) ─────────────────────────
 //
-// Xiaomi-Kameras (z. B. CW300) brauchen einen Mi-Home-Login: go2rtc holt damit
-// bei jedem Verbindungsaufbau den Sitzungsschlüssel aus der Xiaomi-Cloud. Der
-// Login erzeugt einen passToken, der nach ~3 Tagen abläuft (bekannte go2rtc-
-// Eigenheit). Ohne gültigen Token: „401 Unauthorized" → kein Bild.
+// Xiaomi cameras (e.g. CW300) need a Mi-Home login: go2rtc uses it to fetch
+// the session key from the Xiaomi cloud on every connect. The
+// login creates a passToken that expires after ~3 days (known go2rtc
+// quirk). Without a valid token: "401 Unauthorized" → no image.
 //
 // Statt Xiaomis Anmeldeprotokoll (Krypto, Captcha, 2FA) selbst nachzubauen,
-// nutzt das Tool die BEREITS VORHANDENE Anmeldung von go2rtc: Diese Funktion
-// leitet die Login-Anfrage unverändert an go2rtcs eigenes `/api/xiaomi` weiter
-// (auf 127.0.0.1). So findet der Login IM TOOL statt — der Anwender öffnet
-// go2rtc nicht selbst —, aber die eigentliche Anmeldung macht go2rtc.
+// the tool uses go2rtc's ALREADY EXISTING login: this function
+// forwards the login request unchanged to go2rtc's own `/api/xiaomi`
+// (on 127.0.0.1). So the login happens IN THE TOOL — the user does not open
+// go2rtc themselves — but go2rtc does the actual login.
 //
-// WICHTIG (Datenschutz): Zugangsdaten laufen ausschließlich an das lokale
-// go2rtc. Sie werden hier NICHT gespeichert und NICHT geloggt.
+// IMPORTANT (privacy): credentials go exclusively to the local
+// go2rtc. They are NOT stored and NOT logged here.
 
 func handleXiaomiProxy(w http.ResponseWriter, r *http.Request) {
 	ziel := fmt.Sprintf("http://127.0.0.1:%d/api/xiaomi", go2rtcPort)
@@ -43,7 +43,7 @@ func handleXiaomiProxy(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		// Kein Detail-Logging (könnte den Endpunkt/Parameter enthalten).
+		// No detailed logging (could contain the endpoint/parameters).
 		http.Error(w, "go2rtc nicht erreichbar", http.StatusBadGateway)
 		return
 	}

@@ -10,37 +10,37 @@ import (
 
 // ─── GERAETEVERSIONEN ─────────────────────────────────────────────────────────
 //
-// Der Drucker verraet seine Firmware nur auf Nachfrage: info.get_version liefert
-// eine Liste von Baugruppen mit Namen, Hardware- und Softwarestand. Darin steckt
-// die Druckerfirmware (Baugruppe "ota") und, sofern angeschlossen, je ein
-// Eintrag fuer die AMS-Einheiten.
+// The printer reveals its firmware only on request: info.get_version returns
+// a list of modules with name, hardware and software level. It contains
+// the printer firmware (module "ota") and, if connected, one
+// entry per AMS unit.
 //
-// Zu den Betriebsstunden, ehrlich: die stehen in der oertlichen Schnittstelle
-// NICHT. Weder get_version noch die Statusmeldung enthalten einen Zaehler. Was
-// hier angezeigt wird, zaehlt dieses Programm deshalb selbst mit — ab dem Tag,
-// an dem der Drucker eingetragen wurde. Das ist als solches gekennzeichnet und
-// nicht mit dem Zaehler im Geraet zu verwechseln.
+// About the operating hours, honestly: they are NOT in the local interface.
+// Neither get_version nor the status message contains a counter. What
+// is shown here is therefore counted by this program itself — from the day
+// the printer was added. This is marked as such and
+// must not be confused with the counter in the device.
 
-type ModulVersion struct {
+type ModuleVersion struct {
 	Name string `json:"name"`
 	HW   string `json:"hw_ver,omitempty"`
 	SW   string `json:"sw_ver,omitempty"`
 	SN   string `json:"sn,omitempty"`
 }
 
-type GeraeteInfo struct {
-	Firmware  string         `json:"firmware,omitempty"` // Baugruppe "ota"
-	AMS       []ModulVersion `json:"ams,omitempty"`      // je AMS eine Zeile
-	Module    []ModulVersion `json:"module,omitempty"`   // alles, fuer die Diagnose
-	Abgefragt time.Time      `json:"abgefragt,omitempty"`
+type DeviceInfo struct {
+	Firmware  string          `json:"firmware,omitempty"` // Baugruppe "ota"
+	AMS       []ModuleVersion `json:"ams,omitempty"`      // one line per AMS
+	Module    []ModuleVersion `json:"module,omitempty"`   // everything, for diagnostics
+	Abgefragt time.Time       `json:"abgefragt,omitempty"`
 }
 
-// parseVersionReport liest die Antwort auf get_version.
-func parseVersionReport(payload []byte) (*GeraeteInfo, bool) {
+// parseVersionReport reads the response to get_version.
+func parseVersionReport(payload []byte) (*DeviceInfo, bool) {
 	var w struct {
 		Info struct {
-			Command string         `json:"command"`
-			Module  []ModulVersion `json:"module"`
+			Command string          `json:"command"`
+			Module  []ModuleVersion `json:"module"`
 		} `json:"info"`
 	}
 	if err := json.Unmarshal(payload, &w); err != nil {
@@ -50,7 +50,7 @@ func parseVersionReport(payload []byte) (*GeraeteInfo, bool) {
 		return nil, false
 	}
 
-	info := &GeraeteInfo{Abgefragt: time.Now(), Module: w.Info.Module}
+	info := &DeviceInfo{Abgefragt: time.Now(), Module: w.Info.Module}
 	for _, m := range w.Info.Module {
 		name := strings.ToLower(m.Name)
 		switch {
@@ -60,12 +60,12 @@ func parseVersionReport(payload []byte) (*GeraeteInfo, bool) {
 			info.AMS = append(info.AMS, m)
 		}
 	}
-	// Nach Namen sortieren, damit AMS 1 vor AMS 2 steht.
+	// Sort by name so AMS 1 comes before AMS 2.
 	sort.Slice(info.AMS, func(a, b int) bool { return info.AMS[a].Name < info.AMS[b].Name })
 	return info, true
 }
 
-// amsBezeichnung macht aus "ams/0" ein "AMS 1".
+// amsBezeichnung turns "ams/0" into "AMS 1".
 func amsBezeichnung(modulName string) string {
 	n := strings.ToLower(strings.TrimSpace(modulName))
 	n = strings.TrimPrefix(n, "ams")
@@ -81,7 +81,7 @@ func amsBezeichnung(modulName string) string {
 	return "AMS " + strings.ToUpper(n)
 }
 
-// RequestVersion fragt die Baugruppenliste an.
+// RequestVersion requests the module list.
 func (m *MQTTManager) RequestVersion(p Printer) bool {
 	if p.Serial == "" {
 		return false
@@ -92,22 +92,22 @@ func (m *MQTTManager) RequestVersion(p Printer) bool {
 	if !ok || !client.IsConnected() {
 		return false
 	}
-	payload := `{"info":{"sequence_id":"` + naechsteSeq() + `","command":"get_version"}}`
+	payload := `{"info":{"sequence_id":"` + nextSeq() + `","command":"get_version"}}`
 	tok := client.Publish(fmt.Sprintf("device/%s/request", p.Serial), 1, false, payload)
 	return tok.WaitTimeout(3*time.Second) && tok.Error() == nil
 }
 
 // ─── BETRIEBSZEIT ─────────────────────────────────────────────────────────────
 //
-// Selbst mitgezaehlt, weil das Geraet den eigenen Zaehler nicht herausgibt.
-// Erhoeht wird nur, solange wirklich gedruckt wird.
+// Counted by us, because the device does not expose its own counter.
+// Incremented only while actually printing.
 
-const laufzeitTakt = 60 * time.Second
+const runtimeTick = 60 * time.Second
 
-func laufzeitLoop() {
+func runtimeLoop() {
 	for {
-		time.Sleep(laufzeitTakt)
-		if netzPausiert() {
+		time.Sleep(runtimeTick)
+		if netPaused() {
 			continue
 		}
 		mu.Lock()
@@ -124,11 +124,11 @@ func laufzeitLoop() {
 			if s == nil || !s.Online {
 				continue
 			}
-			// Betriebsstunden = eingeschaltet und erreichbar. Frueher wurde nur
-			// die reine Druckzeit gezaehlt; gemeint sind aber die Stunden, die
-			// das Geraet ueberhaupt laeuft.
+			// Operating hours = powered on and reachable. Previously only
+			// the pure print time was counted; but what is meant are the hours the
+			// device is running at all.
 			mu.Lock()
-			state.Laufzeit[p.IP] += int64(laufzeitTakt / time.Second)
+			state.Laufzeit[p.IP] += int64(runtimeTick / time.Second)
 			mu.Unlock()
 			geaendert = true
 		}
@@ -138,8 +138,8 @@ func laufzeitLoop() {
 	}
 }
 
-// laufzeitText macht aus Sekunden eine lesbare Angabe.
-func laufzeitText(sek int64) string {
+// runtimeText turns seconds into a readable value.
+func runtimeText(sek int64) string {
 	if sek <= 0 {
 		return ""
 	}

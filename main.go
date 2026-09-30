@@ -47,50 +47,116 @@ type AppState struct {
 	Cols           int               `json:"cols,omitempty"`
 	FilterPillen   map[string]bool   `json:"filter_pillen,omitempty"`
 
-	// UploadLog haelt fest, was wann wohin geladen wurde — dauerhaft, damit es
-	// einen Neustart uebersteht.
-	UploadLog []UploadEintrag `json:"upload_log,omitempty"`
+	// UploadLog records what was uploaded where and when — persistently, so it
+	// survives a restart.
+	UploadLog []UploadEntry `json:"-"` // own file: upload_log.json
 
-	// Laufzeit in Sekunden je Drucker, von diesem Programm mitgezaehlt.
-	Laufzeit map[string]int64 `json:"laufzeit,omitempty"`
+	// Runtime in seconds per printer, counted by this program.
+	Laufzeit map[string]int64 `json:"-"` // own file: runtime.json
 
 	// KameraSchema haelt fest, welche Adressform an einem Geraet tatsaechlich
-	// ein Bild geliefert hat — gemessen, nicht aus dem Modellnamen geraten.
+	// returned an image — measured, not guessed from the model name.
 	KameraSchema map[string]string `json:"kamera_schema,omitempty"`
 
-	// FwUpdates: je Drucker die offenen Firmware-Updates, die der Drucker
-	// selbst gemeldet hat. Bleibt gespeichert, bis er sie installiert hat.
-	FwUpdates map[string][]FwModulUpdate `json:"fw_updates,omitempty"`
+	// FwUpdates: per printer the open firmware updates the printer
+	// reported itself. Kept stored until it has installed them.
+	FwUpdates map[string][]FwModuleUpdate `json:"-"` // own file: runtime.json
 
-	// Reparatur: je Drucker (IP) die „in Reparatur"-Markierung. Quelle ist die
-	// maintenance.json auf der SD; hier lokal zwischengespeichert.
-	Reparatur map[string]RepairFlag `json:"reparatur,omitempty"`
+	// Reparatur: per printer (IP) the "in repair" marker. Source is the
+	// maintenance.json on the SD; cached locally here.
+	Reparatur map[string]RepairFlag `json:"-"` // own file: runtime.json
 
-	// BlinkAus: je Drucker-IP true, wenn das Fehler-Blinken für DIESEN Drucker
-	// abgeschaltet ist (zusätzlich zum globalen Schalter).
+	// BlinkAus: per printer IP true when error blinking is disabled for THIS
+	// printer (in addition to the global switch).
 	BlinkAus map[string]bool `json:"blink_aus,omitempty"`
 
-	// KameraAus: je Drucker-IP true, wenn die Kamera dauerhaft aus ist
-	// (Kachel zeigt „Private", kein Stream).
+	// KameraAus: per printer IP true when the camera is permanently off
+	// (tile shows "Private", no stream).
 	KameraAus map[string]bool `json:"kamera_aus,omitempty"`
 
-	// StartFilter: Übersichts-Filter beim Start (all|online|offline). Standard all.
+	// StartFilter: overview filter at start (all|online|offline). Default all.
 	StartFilter string `json:"start_filter,omitempty"`
 
-	// SpracheGewaehlt merkt sich, ob der Anwender beim ersten Start seine
-	// Sprache gewaehlt hat. Ist es false, fragt die Oberflaeche einmalig nach.
+	// Broadcast page (/broadcast): decoupled read-only view for streaming/sharing.
+	BroadcastView  string `json:"broadcast_view,omitempty"`  // all|online|offline
+	BroadcastClick bool   `json:"broadcast_click,omitempty"` // Klicken erlaubt?
+	BroadcastCols  int    `json:"broadcast_cols,omitempty"`  // Spaltenzahl im Raster
+
+	// Cloudflare-Tunnel: public = frei erreichbar, secret = Token noetig.
+	TunnelMode  string `json:"tunnel_mode,omitempty"`  // public|secret
+	TunnelToken string `json:"tunnel_token,omitempty"` // Zugangstoken bei secret
+
+	// YouTube-Live: Stream-Key + einstellbare Qualitaet.
+	YTKey        string `json:"yt_key,omitempty"`
+	YTBitrateK   int    `json:"yt_bitrate_k,omitempty"`  // Videobitrate in kbit/s
+	YTResolution string `json:"yt_resolution,omitempty"` // z. B. 1920x1080
+	YTFps        int    `json:"yt_fps,omitempty"`
+
+	// AI assistant: API credentials (only local in config.json, gitignored,
+	// never in the log, never returned to the UI).
+	//
+	// Legacy single-provider fields (kept for migration; new setups use
+	// AIConnectors below). On load these are folded into one connector.
+	AIProvider   string `json:"ai_provider,omitempty"` // openai | anthropic
+	AIModel      string `json:"ai_model,omitempty"`
+	OpenAIKey    string `json:"openai_key,omitempty"`
+	AnthropicKey string `json:"anthropic_key,omitempty"`
+	OllamaURL    string `json:"ollama_url,omitempty"` // lokales Modell (Ollama), Standard http://localhost:11434
+
+	// AIConnectors: several named AI connections, each created like adding a
+	// printer (first the connector, then model/key/endpoint). AIActiveID picks
+	// the one currently used for explain/vision.
+	AIConnectors []AIConnector `json:"ai_connectors,omitempty"`
+	AIActiveID   string        `json:"ai_active_id,omitempty"`
+
+	// Prompts: the instructions to the AI — editable in the tool. {lang} and
+	// {error} are substituted. Empty = default.
+	AIPromptExplain string `json:"ai_prompt_explain,omitempty"`
+	AIPromptVision  string `json:"ai_prompt_vision,omitempty"`
+
+	// PendingFwUpdate: per printer IP true when the firmware update should start
+	// automatically once the running print is finished.
+	PendingFwUpdate map[string]bool `json:"pending_fw_update,omitempty"`
+
+	// JobPlan: the job planner — a list of design figures, each with a planned
+	// quantity per printer MODEL (matrix figure × model). Shown on the Jobs page.
+	JobPlan []PlanFigure `json:"job_plan,omitempty"`
+
+	// Users / APITokens: login accounts (PBKDF2 password hash) and API tokens
+	// (stored as sha256 hash only). Local in config.json, never logged.
+	Users     []User     `json:"users,omitempty"`
+	APITokens []APIToken `json:"api_tokens,omitempty"`
+
+	// BoardTable: lookup table for the board planner. Per combination of
+	// printer model and print file, figures per board and hours per
+	// board — so these values no longer need to be typed into the planner by hand.
+	BoardTable []BoardEntry `json:"board_table,omitempty"`
+
+	// SpracheGewaehlt remembers whether the user chose their language
+	// at first start. If false, the UI asks once.
 	SpracheGewaehlt bool `json:"sprache_gewaehlt,omitempty"`
+
+	// TimelapseAus: per printer IP true when the timelapse should stay
+	// permanently OFF. The printer occasionally turns it back on by itself;
+	// if this switch is set, the tool regularly re-sends "off".
+	TimelapseAus map[string]bool `json:"timelapse_aus,omitempty"`
 }
 
 var (
-	mu         sync.Mutex
-	state      AppState
-	dataFile   string
-	appDir     string
-	go2rtcCmd  *exec.Cmd
-	go2rtcMu   sync.Mutex
-	go2rtcPort = 1984
-	appPort    = 8765
+	// mu protects state (AppState). RWMutex instead of Mutex: pure read paths
+	// (status/health/error queries) take RLock and may thereby
+	// run in parallel; only writes take the full lock. This
+	// relieves the many concurrent status queries at large printer counts.
+	mu            sync.RWMutex
+	state         AppState
+	dataFile      string
+	uploadLogFile string
+	runtimeFile   string
+	appDir        string
+	go2rtcCmd     *exec.Cmd
+	go2rtcMu      sync.Mutex
+	go2rtcPort    = 1984
+	appPort       = 8765
 )
 
 func main() {
@@ -100,44 +166,49 @@ func main() {
 	exePath = exe
 	exeDir := filepath.Dir(exe)
 
-	// Alle Daten liegen in %APPDATA%\Druckerfarm, nicht mehr neben der Exe.
-	// Damit ist die Exe austauschbar (Voraussetzung fuers Update) und
-	// Zugangsdaten landen nicht in einem synchronisierten Projektordner.
+	// All data lives in %APPDATA%\Druckerfarm, no longer next to the exe.
+	// This makes the exe replaceable (prerequisite for the update) and
+	// credentials do not end up in a synced project folder.
 	appDir = dataHome()
 	if appDir == "" {
 		appDir = exeDir
 	}
 	os.MkdirAll(appDir, 0o755)
 	dataFile = filepath.Join(appDir, "config.json")
+	uploadLogFile = filepath.Join(appDir, "upload_log.json")
+	runtimeFile = filepath.Join(appDir, "runtime.json")
 	setupLogFile()
 	migrateFromExeDir(exeDir)
 	cleanupOldExe()
 
 	loadState()
+	migrateAIConnectors() // fold legacy single-provider AI config into a connector
 	initSync(appDir)
-	initPraesenz(appDir) // lokales Zugriffs-Log; Parallel-PC ueber SD-Datei
-	go reparaturLoop()   // Reparatur-Markierungen von der SD einlesen/abgleichen
+	initPraesenz(appDir) // local access log; parallel PC via SD file
+	go repairLoop()      // read/reconcile repair markers from the SD
 
-	// Zuerst verwaiste go2rtc-Prozesse aufraeumen. Ein abgestuerzter oder
-	// ersetzter Programmlauf kann welche hinterlassen; ohne das haeuften sie
-	// sich (schon 10-fach gesehen) und ein Programm-Update griff nicht, solange
-	// noch ein alter Prozess Dateien und Port belegte.
-	if n, _ := killAlleGo2rtc(); n > 0 {
+	// First clean up orphaned go2rtc processes. A crashed or
+	// replaced run can leave some behind; without this they piled
+	// up (seen 10x already) and a program update did not take while
+	// an old process still held files and the port.
+	if n, _ := killAllGo2rtc(); n > 0 {
 		log.Printf("🧹 %d verwaiste(n) go2rtc-Prozess(e) beim Start beendet", n)
 		time.Sleep(400 * time.Millisecond)
 	}
-	// go2rtc starten, falls installiert (sonst laeuft die App ohne Video)
+	// start go2rtc if installed (otherwise the app runs without video)
 	go startGo2rtc()
 	// Connect MQTT to all printers
 	go connectAllMQTT()
-	go laufzeitLoop()
+	go runtimeLoop()
 	go startDiscoveryListener()
-	// Regelmaessig vollen Status anfordern (verlorene Erstantwort holt sich das zurueck)
+	// Request full status regularly (recovers a lost first response)
 	go pushAllLoop()
-	// Kammerbeleuchtung bei Fehlern blinken lassen (Modelle ohne Signalleuchte)
+	// Blink the chamber light on errors (models without a signal light)
 	go errorLightLoop()
-	go reconnectLoop() // offline Drucker automatisch neu verbinden
-	// go2rtc im Blick behalten: Absturz oder Haenger fuehren zum Neustart
+	go reconnectLoop()        // automatically reconnect offline printers
+	go fwAutoLoop()           // trigger scheduled firmware updates after a print
+	go timelapseEnforceLoop() // Zeitraffer bei markierten Druckern dauerhaft aus halten
+	// Keep an eye on go2rtc: a crash or hang triggers a restart
 	go go2rtcHealthLoop()
 
 	// HTTP server
@@ -152,10 +223,20 @@ func main() {
 	mux.HandleFunc("/api/go2rtc/restart", handleG2Restart)
 	mux.HandleFunc("/api/go2rtc/killall", handleG2KillAll)
 	mux.HandleFunc("/api/status", handleStatus)
+	mux.HandleFunc("/api/health", handleHealth)
+	mux.HandleFunc("/api/media/list", handleMediaList)
+	mux.HandleFunc("/api/media/download", handleMediaDownload)
+	mux.HandleFunc("/api/media/delete", handleMediaDelete)
+	mux.HandleFunc("/api/media/clear", handleMediaClear)
+	mux.HandleFunc("/api/media/clear-all", handleMediaClearAll)
+	mux.HandleFunc("/api/media/timelapse", handleMediaTimelapse)
+	mux.HandleFunc("/api/media/timelapse-all", handleMediaTimelapseAll)
+	mux.HandleFunc("/api/ftpcheck", handleFtpCheck)
 	mux.HandleFunc("/api/errors", handleErrors)
 	mux.HandleFunc("/api/debug", handleDebug)
 	mux.HandleFunc("/api/sync/status", handleSyncStatus)
 	mux.HandleFunc("/api/sync/config", handleSyncConfig)
+	mux.HandleFunc("/api/sync/diff", handleSyncDiff)
 	mux.HandleFunc("/api/sync/start", handleSyncControl)
 	mux.HandleFunc("/api/sync/pause", handleSyncControl)
 	mux.HandleFunc("/api/sync/stop", handleSyncControl)
@@ -165,6 +246,8 @@ func main() {
 	mux.HandleFunc("/api/sync/search/start", handleSearchStart)
 	mux.HandleFunc("/api/sync/delete/start", handleDeleteStart)
 	mux.HandleFunc("/api/jobs", handleJobsList)
+	mux.HandleFunc("/api/plan", handlePlan)
+	mux.HandleFunc("/api/preview", handlePreview)
 	mux.HandleFunc("/api/job/status", handleJobStatus)
 	mux.HandleFunc("/api/job/stop", handleJobStop)
 	mux.HandleFunc("/api/open-folder", handleOpenFolder)
@@ -188,6 +271,33 @@ func main() {
 	mux.HandleFunc("/api/settings", handleSettings)
 	mux.HandleFunc("/api/blink", handleBlink)
 	mux.HandleFunc("/api/camera-off", handleCameraOff)
+	mux.HandleFunc("/broadcast", serveBroadcast)
+	mux.HandleFunc("/api/broadcast/config", handleBroadcastConfig)
+	mux.HandleFunc("/api/tunnel/status", handleTunnelStatus)
+	mux.HandleFunc("/api/tunnel/start", handleTunnelStart)
+	mux.HandleFunc("/api/tunnel/stop", handleTunnelStop)
+	mux.HandleFunc("/api/tunnel/install", handleTunnelInstall)
+	mux.HandleFunc("/api/tunnel/config", handleTunnelConfig)
+	mux.HandleFunc("/api/youtube/status", handleYouTubeStatus)
+	mux.HandleFunc("/api/youtube/start", handleYouTubeStart)
+	mux.HandleFunc("/api/youtube/stop", handleYouTubeStop)
+	mux.HandleFunc("/api/youtube/config", handleYouTubeConfig)
+	mux.HandleFunc("/api/ai/config", handleAIConfig)
+	mux.HandleFunc("/api/ai/explain", handleAIExplain)
+	mux.HandleFunc("/api/ai/vision", handleAIVision)
+	mux.HandleFunc("/api/ai/connectors", handleAIConnectors)
+	mux.HandleFunc("/api/ai/connector", handleAIConnector)
+	mux.HandleFunc("/api/ai/active", handleAIActive)
+	// Auth: login, accounts, roles, API tokens.
+	mux.HandleFunc("/api/needsetup", handleNeedSetup)
+	mux.HandleFunc("/api/setup-admin", handleSetupAdmin)
+	mux.HandleFunc("/api/login", handleLogin)
+	mux.HandleFunc("/api/logout", handleLogout)
+	mux.HandleFunc("/api/me", handleMe)
+	mux.HandleFunc("/api/users", handleUsers)
+	mux.HandleFunc("/api/user", handleUser)
+	mux.HandleFunc("/api/tokens", handleTokens)
+	mux.HandleFunc("/api/token", handleToken)
 
 	// Add loading page route BEFORE starting server
 	mux.HandleFunc("/logo.svg", handleLogo)
@@ -203,9 +313,13 @@ func main() {
 	mux.HandleFunc("/api/print/temp", handleSetTemp)
 	mux.HandleFunc("/api/ams/filament", handleSetFilament)
 	mux.HandleFunc("/api/camera-test", handleCameraTest)
-	mux.HandleFunc("/api/network/pause", handleNetzPause)
+	mux.HandleFunc("/api/network/pause", handleNetworkPause)
 	mux.HandleFunc("/api/fwupdate/scan", handleFwUpdateScan)
 	mux.HandleFunc("/api/fwupdate/start", handleFwUpdateStart)
+	mux.HandleFunc("/api/fwupdate/schedule", handleFwSchedule)
+	mux.HandleFunc("/api/xcam", handleXcam)
+	mux.HandleFunc("/api/boardtable", handleBoardTable)
+	mux.HandleFunc("/api/alive", handleAlive)
 	mux.HandleFunc("/api/praesenz", handlePraesenz)
 	mux.HandleFunc("/api/repair", handleRepair)
 	mux.HandleFunc("/loading", serveLoading)
@@ -214,68 +328,79 @@ func main() {
 	// Open window on loading page first — avoids white/transparent flash
 	url := fmt.Sprintf("http://127.0.0.1:%d/loading", appPort)
 
-	// Synchron binden. Vorher lief das in einer Goroutine und der Fehler wurde
-	// verworfen — bei belegtem Port startete die zweite Instanz halb und legte
-	// beim Beenden die erste mit lahm.
+	// Bind synchronously. Previously this ran in a goroutine and the error was
+	// dropped — with a busy port the second instance started halfway and took
+	// the first one down with it on exit.
 	addr := fmt.Sprintf("127.0.0.1:%d", appPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		// Es laeuft bereits eine Instanz: Fenster darauf oeffnen und hier raus.
+		// An instance is already running: focus its window and exit here.
 		log.Printf("ℹ️  Port %d belegt — vermutlich laeuft die App schon. Oeffne ein Fenster darauf.\n", appPort)
 		launchAppWindow(url)
 		return
 	}
-	go http.Serve(ln, corsMiddleware(mux))
+	go http.Serve(ln, corsMiddleware(authMiddleware(mux)))
 	waitForPort(appPort)
 
 	// Open app window (Edge/Chrome in --app mode, no address bar)
 	shutdown := make(chan struct{})
-	winCmd, werr := launchAppWindow(url)
-	if werr != nil {
+	var shutdownOnce sync.Once
+	triggerShutdown := func() { shutdownOnce.Do(func() { close(shutdown) }) }
+
+	if _, werr := launchAppWindow(url); werr != nil {
 		log.Printf("⚠️  %v\n", werr)
 	}
 
-	// Wait for window close or signal
-	go waitForWindow(winCmd, shutdown)
+	// We detect shutdown via the page's open SSE connection: if it
+	// drops (window closed) and no new one arrives within a few seconds (reload),
+	// it shuts down. This is reliable — unlike the browser starter process.
+	go uiPresenceWatcher(triggerShutdown)
+	// Fallback if the page cannot open SSE at all (old browser etc.):
+	// also shut down after long UI silence. Only applies if no
+	// connection was ever made or no UI traffic runs anymore.
+	go func() { waitUntilUIIdle(); triggerShutdown() }()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 
 	select {
 	case <-sig:
-		beendeSauber()
-		return
 	case <-shutdown:
 	}
-
-	// Der gestartete msedge.exe-Prozess ist oft nur ein Starter: bei kaltem
-	// Profil startet Edge sich selbst neu, und wenn schon ein Edge dieses Profil
-	// haelt, reicht er die Kommandozeile weiter und beendet sich sofort. Sein
-	// Ende ist also nur ein Hinweis, kein Beweis. Frueher hat genau das hier den
-	// Server abgeraeumt, waehrend das Fenster noch startete — Ergebnis war
-	// ERR_CONNECTION_REFUSED beim ersten Start.
-	waitUntilUIIdle()
-	beendeSauber()
+	shutdownClean()
+	os.Exit(0)
 }
 
-// beendeSauber raeumt beim Schliessen des Programms auf: die Signalleuchten der
-// betroffenen Drucker (X1E/X2D) gehen von "blinkend" zurueck auf Normal (an),
-// und go2rtc wird vollstaendig beendet — der eigene Prozess wie auch etwaige
-// verwaiste, samt ihrer Kindprozesse (ffmpeg). Ohne das blieb ein blinkendes
-// Lämpchen im Druckerraum stehen und go2rtc lief mitunter weiter.
-func beendeSauber() {
-	// ZUERST go2rtc restlos beenden — das soll sofort passieren. Frueher stand
-	// hier das Zuruecksetzen der Signalleuchten davor (bis zu 6 s Wartezeit),
-	// wodurch go2rtc erst danach beendet wurde und entsprechend lange lief.
+// shutdownClean tidies up on program close: the signal lights of the
+// affected printers (X1E/X2D) go from "blinking" back to normal (on),
+// and go2rtc is fully stopped — the own process as well as any
+// orphans, including their child processes (ffmpeg). Without this a blinking
+// light stayed on in the printer room and go2rtc sometimes kept running.
+func shutdownClean() {
+	// From now on nothing may restart go2rtc (neither watchdog nor
+	// health loop nor a config restart), otherwise it would survive the shutdown.
+	shuttingDown.Store(true)
+	go2rtcMu.Lock()
+	go2rtcWanted = false
+	go2rtcMu.Unlock()
+
+	// Force any debounced runtime.json write out before we exit.
+	flushRuntimeSave()
+
+	// FIRST stop go2rtc entirely — this should happen immediately. Previously
+	// resetting the signal lights came first here (up to 6 s wait),
+	// so go2rtc was only stopped afterwards and ran correspondingly long.
+	stopTunnel()  // Cloudflare-Tunnel + Public-Server beenden
+	stopYouTube() // laufenden YouTube-Push beenden
 	stopGo2rtc()
-	if n, _ := killAlleGo2rtc(); n > 0 {
+	if n, _ := killAllGo2rtc(); n > 0 {
 		log.Printf("🧹 %d go2rtc-Prozess(e) beim Beenden geschlossen", n)
 	}
 
-	beendePraesenz() // Stop-Zeile ins Zugriffs-Log, eigene Praesenz entfernen
+	stopPresence() // Stop-Zeile ins Zugriffs-Log, eigene Praesenz entfernen
 
-	// DANACH die Lampen zuruecksetzen, mit Zeitbegrenzung: antwortet ein Drucker
-	// nicht, geht es nach ein paar Sekunden trotzdem weiter.
+	// THEN reset the lights, with a time limit: if a printer does not
+	// answer, it continues after a few seconds anyway.
 	fertig := make(chan int, 1)
 	go func() { fertig <- ResetChamberLights() }()
 	select {
@@ -295,7 +420,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		noteRequest()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Token")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return
@@ -340,8 +465,8 @@ p{color:rgba(255,255,255,0.75);font-size:13px;margin-bottom:22px;font-family:ui-
 }
 
 // handleReady returns 200 once go2rtc has had a chance to start (1s grace period).
-// Das Logo steckt fest in der Programmdatei — keine Datei daneben, die
-// verlorengehen kann.
+// The logo is embedded in the program file — no adjacent file that
+// can get lost.
 //
 //go:embed assets/logo.svg
 var logoSVG []byte
@@ -352,22 +477,22 @@ func handleLogo(w http.ResponseWriter, r *http.Request) {
 	w.Write(logoSVG)
 }
 
-// Das Startbild steckt ebenfalls fest in der Programmdatei.
+// The splash image is also embedded in the program file.
 //
 //go:embed assets/splash.jpg
 var splashJPG []byte
 
-// Die Drittanbieter-Lizenzen stecken fest in der Programmdatei, damit sie in der
-// App verlinkt und angezeigt werden koennen — unabhaengig davon, ob die
-// Markdown-Datei daneben liegt.
+// The third-party licenses are embedded in the program file so they can be
+// linked and shown in the app — regardless of whether the
+// markdown file is present next to it.
 //
 //go:embed THIRD_PARTY_LICENSES.md
 var thirdPartyLicenses string
 
-// Die Uebersetzungen liegen als JSON je Sprache vor und werden fest in die
+// The translations are provided as JSON per language and embedded firmly into
 // Programmdatei eingebettet. Wer eigene Uebersetzungen will, bearbeitet
-// lang/de.json bzw. lang/en.json und baut die Exe neu. Beim Ausliefern der
-// Seite werden sie an die Stelle __LANGS_JSON__ eingesetzt.
+// lang/de.json or lang/en.json and rebuild the exe. When serving the
+// page they are inserted at __LANGS_JSON__.
 //
 //go:embed lang/de.json
 var langDE string
@@ -375,16 +500,28 @@ var langDE string
 //go:embed lang/en.json
 var langEN string
 
-// de-en.json ist die vollflaechige Wort-fuer-Wort-Zuordnung Deutsch->Englisch,
-// mit der die Oberflaeche bei englischer Sprache automatisch uebersetzt wird —
-// auch dynamisch erzeugter Text. Editierbar vor dem Bauen.
+//go:embed lang/zh.json
+var langZH string
+
+//go:embed lang/es.json
+var langES string
+
+//go:embed lang/de-zh.json
+var langDEZH string
+
+//go:embed lang/de-es.json
+var langDEES string
+
+// de-en.json is the full word-for-word German->English mapping
+// with which the UI is translated automatically in English —
+// including dynamically generated text. Editable before building.
 //
 //go:embed lang/de-en.json
 var langDEEN string
 
-// handleOpenLicenses schreibt die eingebetteten Lizenzen als Datei ins
-// Datenverzeichnis und zeigt sie im Datei-Explorer des Systems an. So oeffnet
-// sich kein Browser-Tab, sondern die Datei liegt greifbar im Ordner.
+// handleOpenLicenses writes the embedded licenses as a file into the
+// data directory and shows it in the system file explorer. This way no
+// browser tab opens; the file sits tangibly in the folder.
 func handleOpenLicenses(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST erwartet", http.StatusMethodNotAllowed)
@@ -398,14 +535,14 @@ func handleOpenLicenses(w http.ResponseWriter, r *http.Request) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		// /select zeigt die Datei markiert im Explorer-Fenster.
+		// /select shows the file selected in the explorer window.
 		cmd = exec.Command("explorer.exe", "/select,"+pfad)
 	case "darwin":
 		cmd = exec.Command("open", "-R", pfad)
 	default:
 		cmd = exec.Command("xdg-open", filepath.Dir(pfad))
 	}
-	_ = cmd.Start() // explorer liefert auch bei Erfolg != 0
+	_ = cmd.Start() // explorer returns != 0 even on success
 	writeJSON(w, map[string]any{"pfad": pfad})
 }
 
@@ -417,10 +554,10 @@ func handleSplash(w http.ResponseWriter, r *http.Request) {
 
 var readySince = time.Now()
 
-// exePath ist der Pfad der laufenden Programmdatei — das Update ersetzt sie.
+// exePath is the path of the running program file — the update replaces it.
 var exePath string
 
-// dataHome liefert das Verzeichnis fuer Konfiguration, Werkzeuge und Log.
+// dataHome returns the directory for configuration, tools and log.
 func dataHome() string {
 	var base string
 	switch runtime.GOOS {
@@ -461,14 +598,14 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-// migrateFromExeDir holt eine vorhandene Einrichtung einmalig aus dem
-// Programmordner herueber, damit nach dem Umzug niemand 42 Drucker neu eintippt.
+// migrateFromExeDir moves an existing setup once from the
+// program folder, so nobody re-types 42 printers after the move.
 func migrateFromExeDir(exeDir string) {
 	if exeDir == appDir {
 		return
 	}
 	if _, err := os.Stat(dataFile); err == nil {
-		return // schon eingerichtet
+		return // already set up
 	}
 	old := filepath.Join(exeDir, "config.json")
 	if _, err := os.Stat(old); err != nil {
@@ -503,22 +640,29 @@ func migrateFromExeDir(exeDir string) {
 	}
 }
 
-// lastRequest haelt fest, wann das UI zuletzt etwas abgerufen hat. Das
-// Dashboard pollt alle 5s, deshalb ist "seit X Sekunden still" das verlaessliche
-// Signal dafuer, dass das Fenster wirklich zu ist.
+// lastRequest records when the UI last fetched something. The
+// dashboard polls every 5s, so "silent for X seconds" is the reliable
+// signal that the window is really closed.
 var lastRequest atomic.Int64
 
-// Als Variablen, damit Tests sie verkleinern koennen.
+// As variables so tests can shrink them.
 var (
-	uiIdleTimeout  = 15 * time.Second
-	uiNeverGrace   = 90 * time.Second
-	uiIdlePollTick = time.Second
+	// Generous so the app does NOT exit prematurely: the msedge starter
+	// leaves immediately if an Edge is already running — then the
+	// idle detection takes over. On first start Windows (Defender/SmartScreen)
+	// can slow the browser by dozens of seconds; with a tight deadline the
+	// server shut down before the window had even loaded (ERR_CONNECTION_
+	// REFUSED on all /api calls). Better a few seconds of zombie on
+	// close than a dead server on start.
+	uiIdleTimeout  = 60 * time.Second // this long without a UI request = window closed
+	uiNeverGrace   = 10 * time.Minute // wait this long for the very first request
+	uiIdlePollTick = 2 * time.Second
 )
 
 func noteRequest() { lastRequest.Store(time.Now().UnixNano()) }
 
-// setupLogFile leitet die Logausgabe in eine Datei um. Mit -H windowsgui gibt es
-// keine Konsole — ohne das ist jede Meldung unsichtbar.
+// setupLogFile redirects log output to a file. With -H windowsgui there is
+// no console — without this every message is invisible.
 func setupLogFile() {
 	path := filepath.Join(appDir, "druckerfarm.log")
 	if st, err := os.Stat(path); err == nil && st.Size() > 1<<20 {
@@ -533,8 +677,8 @@ func setupLogFile() {
 	log.Printf("──── Start ────")
 }
 
-// waitUntilUIIdle kehrt zurueck, sobald das UI laenger als uiIdleTimeout still
-// ist — oder nach uiNeverGrace, falls sich nie jemand verbunden hat.
+// waitUntilUIIdle returns as soon as the UI has been silent longer than
+// uiIdleTimeout — or after uiNeverGrace if nobody ever connected.
 func waitUntilUIIdle() {
 	deadline := time.Now().Add(uiNeverGrace)
 	for {
@@ -572,23 +716,28 @@ func serveUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "Thu, 01 Jan 1970 00:00:00 GMT")
 	w.Header().Set("Surrogate-Control", "no-store")
-	w.Write([]byte(seiteMitVersion()))
+	w.Write([]byte(strings.ReplaceAll(pageWithVersion(), "__BROADCAST_OPTS__", "null")))
 }
 
-// seiteMitVersion setzt die gebaute Versionsnummer in die Seite ein — einmal
-// berechnet, danach aus dem Zwischenspeicher. So steht die Version schon auf dem
-// Startbild (Gorilla-Ladeseite), ohne dass die Oberflaeche sie erst nachladen muss.
+// pageWithVersion inserts the built version number into the page — computed
+// once, then from the cache. So the version already shows on the
+// splash (gorilla loading page) without the UI having to fetch it first.
 var (
 	seiteEinmal sync.Once
 	seiteCache  string
 )
 
-func seiteMitVersion() string {
+func pageWithVersion() string {
 	seiteEinmal.Do(func() {
-		langs := `{"de":` + strings.TrimSpace(langDE) + `,"en":` + strings.TrimSpace(langEN) + `}`
+		langs := `{"de":` + strings.TrimSpace(langDE) + `,"en":` + strings.TrimSpace(langEN) +
+			`,"zh":` + strings.TrimSpace(langZH) + `,"es":` + strings.TrimSpace(langES) + `}`
+		overlays := `{"en":` + strings.TrimSpace(langDEEN) + `,"zh":` + strings.TrimSpace(langDEZH) +
+			`,"es":` + strings.TrimSpace(langDEES) + `}`
 		seite := strings.ReplaceAll(dashboardHTML, "__LANGS_JSON__", langs)
+		seite = strings.ReplaceAll(seite, "__OVERLAYS_JSON__", overlays)
 		seite = strings.ReplaceAll(seite, "__DEEN_JSON__", strings.TrimSpace(langDEEN))
 		seite = strings.ReplaceAll(seite, "__APP_VERSION__", appVersion)
+		seite = strings.ReplaceAll(seite, "__BUILD_ID__", buildID)
 		seiteCache = seite
 	})
 	return seiteCache
@@ -605,15 +754,21 @@ func handlePrinters(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(state.Printers)
 
 	case http.MethodPost:
-		var p Printer
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		var addFlags struct {
+			Printer
+			KameraAus bool `json:"kamera_aus"`
+			BlinkAus  bool `json:"blink_aus"`
+			InRepair  bool `json:"in_repair"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&addFlags); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		// Der Zugangscode ist nicht mehr Bedingung: ein Drucker darf ohne
-		// angelegt und der Code spaeter nachgetragen werden. Ohne ihn gibt es
-		// kein Bild und keinen Dateizugriff, aber der Eintrag existiert schon
-		// einmal — das ist beim Aufbau einer Farm der uebliche Ablauf.
+		p := addFlags.Printer
+		// The access code is no longer required: a printer may be
+		// added without one and the code added later. Without it there is
+		// no image and no file access, but the entry already exists
+		// once — this is the usual flow when building up a farm.
 		if p.Name == "" || p.IP == "" {
 			http.Error(w, "name und ip sind erforderlich", 400)
 			return
@@ -622,11 +777,11 @@ func handlePrinters(w http.ResponseWriter, r *http.Request) {
 			p.Added = time.Now().UnixMilli()
 		}
 		mu.Lock()
-		// "Schon vorhanden?" entscheidet die Seriennummer, NICHT die IP. Ein
-		// Offline-Drucker traegt oft noch eine veraltete IP; bekommt ein neues
-		// Geraet dieselbe IP zugewiesen, darf das Anlegen daran nicht scheitern —
-		// die Live-IP des neuen Geraets ist die richtige. Nur ohne Seriennummer
-		// (manuell, ohne Angabe) bleibt die IP der einzige Anhaltspunkt.
+		// "Already present?" is decided by the serial number, NOT the IP. An
+		// offline printer often still carries a stale IP; if a new
+		// device is assigned the same IP, adding must not fail because of it —
+		// the new device's live IP is the right one. Only without a serial
+		// (manual, no value) does the IP remain the only clue.
 		for _, e := range state.Printers {
 			if p.Serial != "" && e.Serial != "" && strings.EqualFold(strings.TrimSpace(e.Serial), strings.TrimSpace(p.Serial)) {
 				mu.Unlock()
@@ -640,11 +795,27 @@ func handlePrinters(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		state.Printers = append(state.Printers, p)
+		// Set optional flags from the +printer dialog right when creating.
+		if addFlags.KameraAus {
+			if state.KameraAus == nil {
+				state.KameraAus = map[string]bool{}
+			}
+			state.KameraAus[p.IP] = true
+		}
+		if addFlags.BlinkAus {
+			if state.BlinkAus == nil {
+				state.BlinkAus = map[string]bool{}
+			}
+			state.BlinkAus[p.IP] = true
+		}
 		mu.Unlock()
+		if addFlags.InRepair {
+			setRepairCache(p.IP, RepairFlag{InRepair: true, By: eigenerName, Since: time.Now()})
+		}
 		saveState()
 		writeGo2rtcYaml()
 		restartGo2rtcAsync()
-		go syncMQTT() // sonst bleibt der neue Drucker bis zum Neustart ohne Status
+		go syncMQTT() // otherwise the new printer stays without status until restart
 		w.WriteHeader(201)
 		json.NewEncoder(w).Encode(p)
 
@@ -683,7 +854,7 @@ func handlePrinterByIP(w http.ResponseWriter, r *http.Request) {
 		writeGo2rtcYaml()
 		restartGo2rtcAsync()
 		go func() {
-			mqttMgr.Disconnect(ip) // Zugangsdaten koennen sich geaendert haben
+			mqttMgr.Disconnect(ip) // credentials may have changed
 			syncMQTT()
 		}()
 		w.Header().Set("Content-Type", "application/json")
@@ -784,9 +955,9 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	added, skipped := 0, 0
 	mu.Lock()
-	// Duplikate erkennen wir vorrangig an der Seriennummer, nur ersatzweise an
-	// der IP (fuer Zeilen ohne Seriennummer). Eine veraltete IP eines
-	// Offline-Druckers blockiert so nicht das Anlegen eines neuen Geraets.
+	// We detect duplicates primarily by serial number, only fallback by
+	// IP (for rows without a serial). A stale IP of an
+	// offline printer thus does not block adding a new device.
 	existSerial := map[string]bool{}
 	existIP := map[string]bool{}
 	for _, p := range state.Printers {
@@ -866,14 +1037,14 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 const (
 	snapMaxConcurrent = 4
 	snapMinInterval   = 1500 * time.Millisecond
-	// Kurz gehalten: ein haengender Drucker belegt sonst einen der vier
-	// Transcode-Plaetze und bremst die gesunden aus.
+	// Kept short: a hanging printer otherwise occupies one of the four
+	// transcode slots and slows down the healthy ones.
 	snapFetchTimeout = 8 * time.Second
 	snapMaxBackoff   = 2 * time.Minute
 
-	// Jede Bildanfrage startet in go2rtc einen eigenen ffmpeg-Vorgang. Mehr als
-	// das haelt es auf Dauer nicht aus — bei 42 Druckern alle 2 s waeren es 21
-	// Anfragen pro Sekunde, die sich vor vier Bearbeitungsplaetzen stauen.
+	// Every image request starts its own ffmpeg process in go2rtc. More than
+	// that it cannot sustain — with 42 printers every 2 s that is 21
+	// requests per second queuing before four processing slots.
 	snapMaxRatePerSec = 3.0
 )
 
@@ -883,11 +1054,11 @@ type snapEntry struct {
 	ts      time.Time
 	err     error
 	fails   int       // aufeinanderfolgende Fehlschlaege
-	nextTry time.Time // vorher wird gar nicht erst angefragt
+	nextTry time.Time // before this, no request is even made
 }
 
-// backoffFor waechst mit jedem Fehlschlag: 15 s, 30 s, 60 s, dann 2 min.
-// Damit belegt ein dauerhaft kaputter Stream keinen Platz mehr.
+// backoffFor grows with each failure: 15 s, 30 s, 60 s, then 2 min.
+// So a permanently broken stream no longer occupies a slot.
 func backoffFor(fails int) time.Duration {
 	d := time.Duration(1<<uint(min(fails, 4))) * 15 * time.Second / 2
 	if d > snapMaxBackoff {
@@ -913,9 +1084,9 @@ var (
 	snapClient = &http.Client{Timeout: snapFetchTimeout}
 )
 
-// effectiveSnapInterval sagt, wie oft ein einzelner Drucker tatsaechlich ein
-// neues Bild bekommen kann, ohne go2rtc zu ueberfahren. Der gewuenschte Wert
-// wird nur eingehalten, solange die Gesamtrate das hergibt.
+// effectiveSnapInterval says how often a single printer can actually get a
+// new image without overrunning go2rtc. The desired value
+// is only honored as long as the overall rate allows.
 func effectiveSnapInterval(requested time.Duration) time.Duration {
 	mu.Lock()
 	n := len(state.Printers)
@@ -974,17 +1145,17 @@ func fetchFrame(stream string) ([]byte, error) {
 		return nil, err
 	}
 	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
-		// go2rtc antwortet in diesem Fall mit 200 und leerem Rumpf und behaelt
-		// den Grund fuer sich — der steht nur in seinem eigenen Log. Deshalb
-		// wird hier selbst nachgesehen, statt pauschal ffmpeg zu verdaechtigen.
+		// go2rtc answers with 200 and an empty body in this case and keeps
+		// the reason to itself — it is only in its own log. So
+		// we look ourselves instead of blaming ffmpeg wholesale.
 		return nil, fmt.Errorf("kein Bild: %s", diagnoseStream(stream))
 	}
 	return data, nil
 }
 
-// diagnoseStream sucht den tatsaechlichen Grund, warum go2rtc kein Bild liefert.
+// diagnoseStream finds the actual reason why go2rtc returns no image.
 func diagnoseStream(stream string) string {
-	// 1. Kennt go2rtc den Stream ueberhaupt?
+	// 1. Does go2rtc know the stream at all?
 	u := fmt.Sprintf("http://127.0.0.1:%d/api/streams?src=%s", go2rtcPort, url.QueryEscape(stream))
 	resp, err := snapClient.Get(u)
 	if err != nil {
@@ -996,18 +1167,18 @@ func diagnoseStream(stream string) string {
 		return fmt.Sprintf("Stream %q steht nicht in der go2rtc-Konfiguration — go2rtc neu starten", stream)
 	}
 
-	// 2. Ist ffmpeg da? Ohne kann go2rtc H264 nicht nach JPEG wandeln.
+	// 2. Is ffmpeg present? Without it go2rtc cannot convert H264 to JPEG.
 	if !fileExists(ffmpegBinPath()) {
 		if _, err := exec.LookPath("ffmpeg"); err != nil {
 			return "ffmpeg fehlt — unter Einstellungen nachladen"
 		}
 	}
 
-	// 3. Antwortet die Kamera des Druckers?
-	// Standalone-Kameras haben keinen Drucker — eigene, kameraspezifische
+	// 3. Does the printer's camera answer?
+	// Standalone cameras have no printer — their own camera-specific
 	// Diagnose (sauber getrennt, siehe camera.go).
-	if istKameraStream(stream) {
-		return kameraStreamDiagnose(stream)
+	if isCameraStream(stream) {
+		return cameraStreamDiagnostics(stream)
 	}
 	ip, name, online := printerForStream(stream)
 	if ip == "" {
@@ -1022,11 +1193,11 @@ func diagnoseStream(stream string) string {
 	}
 	conn.Close()
 
-	// 4. Port offen, trotzdem kein Bild — dann stimmt meist der Zugangscode nicht
+	// 4. Port open but still no image — then usually the access code is wrong
 	return fmt.Sprintf("%s nimmt Verbindungen an, liefert aber kein Bild — Zugangscode prüfen", name)
 }
 
-// printerForStream findet den Drucker, aus dessen Namen der Streamname entstand.
+// printerForStream finds the printer whose name produced the stream name.
 func printerForStream(stream string) (ip, name string, online bool) {
 	mu.Lock()
 	var found *Printer
@@ -1045,7 +1216,7 @@ func printerForStream(stream string) (ip, name string, online bool) {
 }
 
 func handleSnapshot(w http.ResponseWriter, r *http.Request) {
-	if netzPausiert() {
+	if netPaused() {
 		http.Error(w, "Netzwerkverkehr ist angehalten", http.StatusServiceUnavailable)
 		return
 	}
@@ -1064,7 +1235,7 @@ func handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if stream == "" {
-		// Standalone-Kamera? Dann die Kennung als Kamera-ID auffassen.
+		// Standalone camera? Then treat the id as a camera ID.
 		for _, c := range state.Cameras {
 			if c.ID == ip {
 				if s := strings.TrimSpace(c.Stream); s != "" {
@@ -1088,7 +1259,7 @@ func handleSnapshot(w http.ResponseWriter, r *http.Request) {
 			maxAge = time.Duration(secs * float64(time.Second))
 		}
 	}
-	// Auf das anheben, was go2rtc bei dieser Druckerzahl noch verkraftet
+	// Raise it to what go2rtc can still handle at this printer count
 	effective := effectiveSnapInterval(maxAge)
 	throttled := effective > maxAge
 	maxAge = effective
@@ -1134,12 +1305,12 @@ func handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("X-Snapshot-Retry-In", fmt.Sprintf("%.0f", retryIn.Seconds()))
 		w.Header().Set("X-Snapshot-Fails", fmt.Sprintf("%d", fails))
-		// Standalone-Kameras: KEIN 503 zurückgeben. Der Browser protokolliert
-		// jeden 4xx/5xx als roten Konsolenfehler — bei einer zeitweise nicht
-		// erreichbaren Außenkamera ist das nur Lärm. Stattdessen 200 mit leerem
-		// Rumpf und einem Hinweis-Header; die Oberfläche zeigt „nicht verfügbar"
-		// ohne Ladekreis und ohne Konsolenfehler und hält die Pause ein.
-		if istKameraStream(stream) {
+		// Standalone cameras: do NOT return 503. The browser logs
+		// every 4xx/5xx as a red console error — for a temporarily
+		// unreachable outdoor camera that is just noise. Instead 200 with an empty
+		// body and a hint header; the UI shows "unavailable"
+		// without a spinner and without a console error and honors the pause.
+		if isCameraStream(stream) {
 			w.Header().Set("X-Snapshot-Unavailable", "1")
 			w.Header().Set("X-Snapshot-Reason", msg)
 			w.Header().Set("Cache-Control", "no-store")
@@ -1167,26 +1338,34 @@ func handleSnapshot(w http.ResponseWriter, r *http.Request) {
 
 func handleG2Status(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	go2rtcMu.Lock()
+	pid := 0
+	if go2rtcCmd != nil && go2rtcCmd.Process != nil {
+		pid = go2rtcCmd.Process.Pid
+	}
+	go2rtcMu.Unlock()
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"online":   checkGo2rtcRunning(),
 		"port":     go2rtcPort,
-		"prozesse": zaehleGo2rtc(),
+		"prozesse": countGo2rtc(),
+		"pid":      pid,
+		"pids":     go2rtcPIDs(), // all running go2rtc PIDs, not only the managed one
 	})
 }
 
-// handleG2KillAll ist der Notausschalter: alle go2rtc-Prozesse beenden — auch
-// verwaiste — und danach genau einen frischen starten. Hilft, wenn sich
-// Prozesse gehaeuft haben oder ein Programm-Update nicht greift.
+// handleG2KillAll is the emergency switch: stop all go2rtc processes — including
+// orphans — and then start exactly one fresh. Helps when
+// processes have piled up or a program update does not take.
 func handleG2KillAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST erwartet", http.StatusMethodNotAllowed)
 		return
 	}
-	stopGo2rtc() // eigenen Prozess sauber abmelden und beenden
-	beendet, _ := killAlleGo2rtc()
+	stopGo2rtc() // cleanly deregister and stop our own process
+	beendet, _ := killAllGo2rtc()
 	time.Sleep(500 * time.Millisecond)
-	// Einen frischen starten, sofern installiert und nicht in der Netzpause.
-	if !netzPausiert() && fileExists(go2rtcBinPath()) {
+	// Start a fresh one if installed and not in the network pause.
+	if !netPaused() && fileExists(go2rtcBinPath()) {
 		go2rtcMu.Lock()
 		go2rtcWanted = true
 		go2rtcMu.Unlock()
@@ -1199,20 +1378,20 @@ func handleG2KillAll(w http.ResponseWriter, r *http.Request) {
 
 // restartGo2rtcAsync restarts go2rtc in the background after a short delay.
 // Called automatically when printers are added/removed.
-// restartGo2rtcAsync sammelt Neustarts ein, statt jeden einzeln auszufuehren.
+// restartGo2rtcAsync coalesces restarts instead of running each one.
 //
-// Vorher startete jeder Aufruf einen eigenen Ablauf. Wer zehn Drucker
-// nacheinander anlegt, loeste damit zehn ueberlappende Stopp-Start-Folgen aus —
-// go2rtc kam dabei kaum zum Laufen. Jetzt setzt jeder Aufruf nur die Frist neu;
-// ausgefuehrt wird einmal, wenn Ruhe eingekehrt ist.
+// Previously each call started its own run. Adding ten printers
+// in a row triggered ten overlapping stop-start sequences —
+// go2rtc barely got running. Now each call just resets the deadline;
+// it runs once, when things have settled.
 //
-// Die Vorpruefung geschieht bewusst SOFORT und nicht erst in der Goroutine:
-// ist gar kein go2rtc installiert oder ist der Netzverkehr angehalten, bleibt
-// gar nichts liegen, was spaeter noch loslaufen koennte.
+// The precheck deliberately happens IMMEDIATELY, not in the goroutine:
+// if no go2rtc is installed or network traffic is paused,
+// nothing is left pending that could start up later.
 var restartTimer *time.Timer
 
 func restartGo2rtcAsync() {
-	if netzPausiert() || !fileExists(go2rtcBinPath()) {
+	if netPaused() || !fileExists(go2rtcBinPath()) {
 		return
 	}
 	go2rtcMu.Lock()
@@ -1220,7 +1399,7 @@ func restartGo2rtcAsync() {
 	if restartTimer != nil {
 		restartTimer.Stop()
 	}
-	restartTimer = time.AfterFunc(800*time.Millisecond, neustartGo2rtc)
+	restartTimer = time.AfterFunc(800*time.Millisecond, restartGo2rtc)
 }
 
 func handleG2Restart(w http.ResponseWriter, r *http.Request) {
@@ -1228,12 +1407,12 @@ func handleG2Restart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST only", 405)
 		return
 	}
-	go neustartGo2rtc()
+	go restartGo2rtc()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "restarting"})
 }
 
-// go2rtcWanted sagt, ob go2rtc laufen SOLL. Nur so laesst sich ein Absturz von
+// go2rtcWanted says whether go2rtc SHOULD run. Only this lets a crash be told
 // einem gewollten Stopp unterscheiden.
 var (
 	go2rtcWanted bool
@@ -1242,6 +1421,9 @@ var (
 )
 
 func startGo2rtc() {
+	if shuttingDown.Load() {
+		return // im Beenden nichts mehr hochfahren
+	}
 	go2rtcMu.Lock()
 
 	binaryPath := go2rtcBinPath()
@@ -1254,9 +1436,9 @@ func startGo2rtc() {
 
 	yamlPath := filepath.Join(appDir, "go2rtc.yaml")
 	cmd := exec.Command(binaryPath, "-config", yamlPath)
-	cmd.Env = envWithFFmpeg() // damit go2rtc unser ffmpeg findet
+	cmd.Env = envWithFFmpeg() // so go2rtc finds our ffmpeg
 	// Ausgabe mitschreiben. Vorher wurde sie verworfen — endete go2rtc, stand
-	// nirgends warum, und jede Fehlersuche war Raten.
+	// from nowhere why, and every debugging was guesswork.
 	if lf, err := os.OpenFile(filepath.Join(appDir, "go2rtc.log"),
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); err == nil {
 		cmd.Stdout = lf
@@ -1279,9 +1461,9 @@ func startGo2rtc() {
 	go verifyStreamsLoaded()
 }
 
-// verifyStreamsLoaded vergleicht, was in die Konfiguration geschrieben wurde,
-// mit dem, was go2rtc daraus gemacht hat. Weicht es ab, ist die Datei fehlerhaft
-// — go2rtc laeuft dann zwar, kennt aber keine oder zu wenige Streams.
+// verifyStreamsLoaded compares what was written to the configuration
+// with what go2rtc made of it. If they differ, the file is faulty
+// — go2rtc then runs but knows no or too few streams.
 func verifyStreamsLoaded() {
 	for i := 0; i < 15; i++ {
 		time.Sleep(time.Second)
@@ -1332,9 +1514,9 @@ func setStreamCount(got, want int) {
 	streamCount.Unlock()
 }
 
-// superviseGo2rtc wartet auf das Ende des Prozesses. Endet er, obwohl er laufen
-// soll, wird er neu gestartet — vorher blieb er einfach weg und mit ihm alle
-// Videos und Snapshots, bis jemand von Hand eingriff.
+// superviseGo2rtc waits for the process to end. If it ends although it should
+// run, it is restarted — previously it simply vanished and with it all
+// videos and snapshots, until someone intervened by hand.
 func superviseGo2rtc(cmd *exec.Cmd, gen int) {
 	started := time.Now()
 	err := cmd.Wait()
@@ -1343,18 +1525,18 @@ func superviseGo2rtc(cmd *exec.Cmd, gen int) {
 	superseded := gen != go2rtcGen
 	wanted := go2rtcWanted
 	if time.Since(started) > time.Minute {
-		go2rtcFails = 0 // lief lange genug, also kein Startproblem
+		go2rtcFails = 0 // ran long enough, so no start problem
 	}
 	fails := go2rtcFails
 	go2rtcMu.Unlock()
 
 	if superseded || !wanted {
-		return // gewollt beendet oder laengst ersetzt
+		return // intentionally stopped or long since replaced
 	}
 	// Waehrend einer Netzwerkpause bleibt go2rtc unten. Ohne diese Sperre
-	// deutet der Aufpasser das gewollte Beenden als Absturz und zieht es
-	// Sekunden spaeter wieder hoch — die Pause waere damit wirkungslos.
-	if netzPausiert() {
+	// the supervisor would read the intended stop as a crash and pull it
+	// back up seconds later — the pause would then be ineffective.
+	if netPaused() {
 		log.Printf("go2rtc beendet — Netzwerkverkehr ist angehalten, kein Neustart")
 		return
 	}
@@ -1386,13 +1568,13 @@ func minInt(a, b int) int {
 	return b
 }
 
-// go2rtcHealthLoop faengt den Fall ab, dass der Prozess zwar noch existiert,
-// aber nicht mehr antwortet.
+// go2rtcHealthLoop catches the case where the process still exists
+// but no longer responds.
 func go2rtcHealthLoop() {
-	// Waehrend der Pause bleibt go2rtc bewusst unten.
+	// During the pause go2rtc deliberately stays down.
 	for {
 		time.Sleep(30 * time.Second)
-		if netzPausiert() {
+		if netPaused() {
 			continue
 		}
 
@@ -1405,42 +1587,45 @@ func go2rtcHealthLoop() {
 		if checkGo2rtcRunning() {
 			continue
 		}
-		// Zweite Chance, bevor neu gestartet wird
+		// Second chance before a restart
 		time.Sleep(3 * time.Second)
 		if checkGo2rtcRunning() {
 			continue
 		}
 		log.Printf("⚠️  go2rtc antwortet nicht auf Port %d — starte neu", go2rtcPort)
-		neustartGo2rtc()
+		restartGo2rtc()
 	}
 }
 
-// neustartGo2rtc startet go2rtc gruendlich neu. Erst wird der selbst verwaltete
-// Prozess beendet, dann werden ALLE noch laufenden (auch verwaiste)
-// go2rtc-Prozesse samt Kindern beseitigt — sonst haelt ein haengengebliebener
-// weiterhin Port 1984 und der frische kann nicht binden. Genau daran scheiterte
-// der Neustart im Programm: stopGo2rtc allein beendet nur den eigenen Prozess.
-// neustartMu sorgt dafuer, dass immer nur EIN Neustart laeuft. Ohne das konnten
-// sich zwei gleichzeitige Neustarts (z. B. Knopf + automatischer Anlass)
-// gegenseitig abwuergen: der killAlleGo2rtc des einen beendet den frisch
+// restartGo2rtc restarts go2rtc thoroughly. First the self-managed
+// process is stopped, then ALL still-running (including orphaned)
+// go2rtc processes including children are removed — otherwise a stuck one
+// keeps holding port 1984 and the fresh one cannot bind. This is exactly why
+// the in-program restart failed: stopGo2rtc alone only stops the own process.
+// neustartMu ensures only ONE restart runs at a time. Without it two
+// simultaneous restarts (e.g. button + automatic trigger) could
+// choke each other: one's killAllGo2rtc kills the freshly
 // gestarteten des anderen.
 var neustartMu sync.Mutex
 
-func neustartGo2rtc() {
-	if netzPausiert() {
-		return // waehrend der Pause bleibt go2rtc bewusst unten
+func restartGo2rtc() {
+	if shuttingDown.Load() {
+		return // no restart during shutdown
+	}
+	if netPaused() {
+		return // during the pause go2rtc deliberately stays down
 	}
 	if !neustartMu.TryLock() {
-		return // es laeuft bereits ein Neustart
+		return // a restart is already running
 	}
 	defer neustartMu.Unlock()
 
 	stopGo2rtc()
-	if n, _ := killAlleGo2rtc(); n > 0 {
+	if n, _ := killAllGo2rtc(); n > 0 {
 		log.Printf("🔁 Neustart: %d verbliebene(n) go2rtc-Prozess(e) beendet", n)
 	}
 
-	// Warten, bis Port 1984 wirklich frei ist — nicht blind eine feste Zeit.
+	// Wait until port 1984 is really free — not blindly a fixed time.
 	for i := 0; i < 25 && checkGo2rtcRunning(); i++ {
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -1451,18 +1636,18 @@ func neustartGo2rtc() {
 	go2rtcMu.Unlock()
 	startGo2rtc()
 
-	// Nachsehen, ob der frische Prozess wirklich hochkommt. Wenn nicht,
-	// aufraeumen und ein zweites Mal starten — das faengt haengengebliebene
-	// Ports und Fehlstarts ab.
-	if !warteAufGo2rtc(8 * time.Second) {
+	// Check whether the fresh process actually comes up. If not,
+	// clean up and start a second time — this catches stuck
+	// ports and failed starts.
+	if !waitForGo2rtc(8 * time.Second) {
 		log.Printf("⚠️  go2rtc nach Neustart nicht erreichbar — zweiter Versuch")
-		killAlleGo2rtc()
+		killAllGo2rtc()
 		time.Sleep(700 * time.Millisecond)
 		go2rtcMu.Lock()
 		go2rtcWanted = true
 		go2rtcMu.Unlock()
 		startGo2rtc()
-		if warteAufGo2rtc(8 * time.Second) {
+		if waitForGo2rtc(8 * time.Second) {
 			log.Printf("✅ go2rtc nach zweitem Versuch erreichbar")
 		} else {
 			log.Printf("❌ go2rtc laesst sich nicht starten — siehe go2rtc.log")
@@ -1472,8 +1657,8 @@ func neustartGo2rtc() {
 	}
 }
 
-// warteAufGo2rtc pollt Port 1984, bis go2rtc antwortet oder die Frist ablaeuft.
-func warteAufGo2rtc(frist time.Duration) bool {
+// waitForGo2rtc polls port 1984 until go2rtc answers or the deadline passes.
+func waitForGo2rtc(frist time.Duration) bool {
 	ende := time.Now().Add(frist)
 	for time.Now().Before(ende) {
 		if checkGo2rtcRunning() {
@@ -1488,9 +1673,9 @@ func stopGo2rtc() {
 	go2rtcMu.Lock()
 	defer go2rtcMu.Unlock()
 	go2rtcWanted = false
-	go2rtcGen++ // laufende Ueberwachung fuer ungueltig erklaeren
+	go2rtcGen++ // invalidate the running supervision
 	if go2rtcCmd != nil && go2rtcCmd.Process != nil {
-		beendeGo2rtcBaum(go2rtcCmd) // samt ffmpeg-Kindern — sonst haengen die ~10 s
+		killGo2rtcTree(go2rtcCmd) // including ffmpeg children — otherwise they hang ~10 s
 		go2rtcCmd = nil
 	}
 }
@@ -1506,31 +1691,31 @@ func checkGo2rtcRunning() bool {
 
 // ─── YAML ─────────────────────────────────────────────────────────────────────
 
-// buildYaml erzeugt die Konfiguration. Doppelte Streamnamen sind dabei toedlich:
-// go2rtc verwirft bei einem doppelten Schluessel die GESAMTE streams-Sektion und
-// kennt anschliessend keinen einzigen Stream — laeuft aber weiter, als waere
-// nichts. Deshalb werden Namen hier eindeutig gemacht.
-// kameraQuellen liefert die Adressen fuer einen Drucker — in der Reihenfolge,
-// in der go2rtc sie ausprobieren soll.
+// buildYaml builds the configuration. Duplicate stream names are fatal here:
+// on a duplicate key go2rtc discards the ENTIRE streams section and
+// then knows not a single stream — but keeps running as if
+// nothing happened. So names are made unique here.
+// cameraSources returns the addresses for a printer — in the order
+// go2rtc should try them.
 //
-// Der Unterschied zwischen den Schemata ist entscheidend: rtspx:// ist eine
-// Sonderform, die bei der X1-Reihe zuverlaessig funktioniert. Die H2- und
-// P2-Reihe antwortet darauf mit einer Umleitung auf rtsps:// und liefert kein
-// Bild — genau das Verhalten, das bei allen H-Geraeten zu sehen war. Deshalb
+// The difference between the schemes is decisive: rtspx:// is a
+// special form that works reliably on the X1 series. The H2 and
+// P2 series respond to it with a redirect to rtsps:// and return no
+// image — exactly the behaviour seen on all H devices. So
 // steht dort rtsps:// vorn.
 //
-// Angegeben werden beide, damit ein Geraet, das sich anders verhaelt als sein
-// Modellname vermuten laesst, trotzdem ein Bild liefert: go2rtc probiert die
-// Eintraege der Reihe nach durch.
-func kameraQuellen(p Printer, gemessen map[string]string) []string {
+// Both are given so a device that behaves differently than its
+// model name suggests still returns an image: go2rtc tries the
+// entries in order.
+func cameraSources(p Printer, gemessen map[string]string) []string {
 	auth := fmt.Sprintf("bblp:%s@%s:322", p.Code, p.IP)
 
-	// Wurde am Geraet gemessen, welche Form funktioniert, hat die Vorrang vor
+	// If it was measured on the device which form works, that takes precedence over
 	// jeder Ableitung aus dem Modellnamen.
 	//
-	// Die Karte wird hereingereicht und nicht hier gelesen: buildYaml laeuft
-	// bereits unter der Sperre, ein zweiter Zugriff darauf haengt das Programm
-	// auf. Genau das ist beim ersten Anlauf passiert.
+	// The map is passed in and not read here: buildYaml runs
+	// already under the lock; a second access to it hangs the program
+	// up. Exactly that happened on the first attempt.
 	if schema, pfad, ok := schemaAus(gemessen, p.IP); ok {
 		gemessen := schema + "://" + auth + pfad
 		rest := []string{}
@@ -1563,7 +1748,7 @@ func buildYaml(printers []Printer, gemessen map[string]string) string {
 	sb.WriteString("# go2rtc.yaml\n\napi:\n  origin: '*'\n\nstreams:\n")
 	for _, p := range namedStreams(printers) {
 		sb.WriteString("  " + p.stream + ":\n")
-		for _, q := range kameraQuellen(p.printer, gemessen) {
+		for _, q := range cameraSources(p.printer, gemessen) {
 			sb.WriteString("    - " + q + "\n")
 		}
 	}
@@ -1596,8 +1781,8 @@ func namedStreams(printers []Printer) []streamEntry {
 	return out
 }
 
-// streamNameFor liefert den tatsaechlich verwendeten Streamnamen eines Druckers,
-// also inklusive der Entdopplung.
+// streamNameFor returns the actually used stream name of a printer,
+// i.e. including the de-duplication.
 func streamNameFor(ip string) string {
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -1640,11 +1825,11 @@ func writeGo2rtcYaml() {
 	copy(cams, state.Cameras)
 	mu.Unlock()
 	pfad := filepath.Join(appDir, "go2rtc.yaml")
-	// WICHTIG: go2rtc schreibt beim Mi-Home-Login eigene Abschnitte in diese
-	// Datei (Konto/Token für den Xiaomi-Cloud-Schlüssel). Beim Neuschreiben der
-	// von uns verwalteten Abschnitte (api/streams) dürfen diese NICHT verloren
-	// gehen — sonst kann go2rtc den Kameraschlüssel nicht mehr holen. Deshalb
-	// werden fremde Top-Level-Abschnitte aus der bestehenden Datei übernommen.
+	// IMPORTANT: on Mi-Home login go2rtc writes its own sections into this
+	// file (account/token for the Xiaomi cloud key). When rewriting the
+	// sections we manage (api/streams) these must NOT be
+	// lost — otherwise go2rtc can no longer fetch the camera key. So
+	// foreign top-level sections are carried over from the existing file.
 	vorher, _ := os.ReadFile(pfad)
 	fremd := erhalteFremdeSektionen(string(vorher))
 	yaml := buildYaml(state.Printers, gemessen) + cameraStreamsYaml(cams) + fremd
@@ -1654,20 +1839,30 @@ func writeGo2rtcYaml() {
 // ─── PERSISTENCE ──────────────────────────────────────────────────────────────
 
 func loadState() {
-	data, err := os.ReadFile(dataFile)
-	if err != nil {
-		return
+	data, _ := os.ReadFile(dataFile) // if missing, state stays empty — ok
+	if len(data) > 0 {
+		mu.Lock()
+		json.Unmarshal(data, &state)
+		mu.Unlock()
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	json.Unmarshal(data, &state)
+	// Betriebsdaten liegen in eigenen Dateien; fehlen sie, einmalig aus einer
+	// alten config.json uebernehmen (Migration).
+	loadOrMigrateOps(data)
 }
 
+// saveState writes ONLY the settings to config.json. The four
+// operational-data fields (upload history, runtime, repair, FwUpdates) are
+// excluded with json:"-". Runtime/Reparatur/FwUpdates are small and
+// are written along here (runtime.json); the large upload history
+// stays out and is saved only on real changes via saveUploadLog()
+// gesichert.
 func saveState() {
-	mu.Lock()
+	mu.RLock()
 	data, _ := json.MarshalIndent(state, "", "  ")
-	mu.Unlock()
-	os.WriteFile(dataFile, data, 0644)
+	mu.RUnlock()
+	backupConfig()
+	atomicWrite(dataFile, data, 0644)
+	scheduleRuntimeSave()
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -1690,35 +1885,40 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	statuses := mqttMgr.AllStatuses()
 
-	// Die selbst gezaehlte Laufzeit gehoert nicht in den MQTT-Zustand — sie
-	// kommt nicht vom Geraet. Sie wird hier daneben gestellt.
-	mu.Lock()
+	// The self-counted runtime does not belong in the MQTT state — it
+	// does not come from the device. It is placed alongside here.
+	mu.RLock()
 	laufzeit := map[string]int64{}
 	for ip, sek := range state.Laufzeit {
 		laufzeit[ip] = sek
 	}
-	mu.Unlock()
+	mu.RUnlock()
 
 	type erweitert struct {
 		PrinterStatus
-		LaufzeitSek  int64           `json:"laufzeit_sek,omitempty"`
-		LaufzeitText string          `json:"laufzeit_text,omitempty"`
-		FwUpdates    []FwModulUpdate `json:"fw_updates,omitempty"`
-		Reparatur    *RepairFlag     `json:"reparatur,omitempty"`
+		LaufzeitSek  int64            `json:"laufzeit_sek,omitempty"`
+		LaufzeitText string           `json:"laufzeit_text,omitempty"`
+		FwUpdates    []FwModuleUpdate `json:"fw_updates,omitempty"`
+		FwScheduled  bool             `json:"fw_scheduled,omitempty"`
+		Reparatur    *RepairFlag      `json:"reparatur,omitempty"`
 	}
-	// Offene Firmware-Updates je Drucker — dabei wird gegen die laufende
-	// Firmware abgeglichen und bereits Installiertes faellt weg.
-	fw := fwAnzeige()
+	// Open firmware updates per printer — compared against the running
+	// firmware and already-installed items drop out.
+	fw := fwForDisplay()
 	// Reparatur-Markierungen aus dem Zwischenspeicher.
-	mu.Lock()
+	mu.RLock()
 	rep := map[string]RepairFlag{}
 	for ip, f := range state.Reparatur {
 		rep[ip] = f
 	}
-	mu.Unlock()
+	fwPlan := map[string]bool{}
+	for ip, an := range state.PendingFwUpdate {
+		fwPlan[ip] = an
+	}
+	mu.RUnlock()
 	out := map[string]erweitert{}
 	for ip, st := range statuses {
-		e := erweitert{PrinterStatus: st, LaufzeitSek: laufzeit[ip], LaufzeitText: laufzeitText(laufzeit[ip]), FwUpdates: fw[ip]}
+		e := erweitert{PrinterStatus: st, LaufzeitSek: laufzeit[ip], LaufzeitText: runtimeText(laufzeit[ip]), FwUpdates: fw[ip], FwScheduled: fwPlan[ip]}
 		if f, ok := rep[ip]; ok && f.InRepair {
 			cp := f
 			e.Reparatur = &cp
@@ -1741,10 +1941,10 @@ func handleErrors(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	statuses := mqttMgr.AllStatuses()
-	mu.Lock()
+	mu.RLock()
 	printers := make([]Printer, len(state.Printers))
 	copy(printers, state.Printers)
-	mu.Unlock()
+	mu.RUnlock()
 
 	var errors []PrinterError
 	for _, p := range printers {
@@ -1837,8 +2037,8 @@ func handleCameraResolution(w http.ResponseWriter, r *http.Request) {
 
 // ─── DRUCKSTEUERUNG ───────────────────────────────────────────────────────────
 
-// handlePrintCommand schickt pause/resume/stop an einen oder mehrere Drucker.
-// Ohne "ips" passiert nichts — ein versehentlicher Aufruf soll nicht die ganze
+// handlePrintCommand sends pause/resume/stop to one or more printers.
+// Without "ips" nothing happens — an accidental call should not hit the whole
 // Farm treffen.
 func handlePrintCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -1890,8 +2090,8 @@ func handlePrintCommand(w http.ResponseWriter, r *http.Request) {
 
 // ─── EINSTELLUNGEN ────────────────────────────────────────────────────────────
 
-// handleSettings haelt Theme, Sprache und Spaltenzahl fest. Bisher lagen die im
-// Browserspeicher — und waren damit weg, sobald das Edge-Profil neu angelegt wurde.
+// handleSettings stores theme, language and column count. Previously these were in
+// browser storage — and thus gone once the Edge profile was recreated.
 func handleSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var body struct {
@@ -1911,7 +2111,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.Theme != nil && (*body.Theme == "dark" || *body.Theme == "light") {
 			state.Theme = *body.Theme
 		}
-		if body.Lang != nil && (*body.Lang == "de" || *body.Lang == "en") {
+		if body.Lang != nil && (*body.Lang == "de" || *body.Lang == "en" || *body.Lang == "zh" || *body.Lang == "es") {
 			state.Lang = *body.Lang
 		}
 		if body.SpracheGewaehlt != nil {
@@ -1939,7 +2139,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 		saveState()
 		if turnedOff {
-			// Abschalten heisst auch: sofort wieder normales Licht herstellen
+			// Turning off also means: immediately restore normal light
 			go ResetChamberLights()
 		}
 	}
@@ -1955,11 +2155,27 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	spracheGewaehlt := state.SpracheGewaehlt
 	startFilter := state.StartFilter
 	blinkAus := map[string]bool{}
-	for k, v := range state.BlinkAus { if v { blinkAus[k] = true } }
+	for k, v := range state.BlinkAus {
+		if v {
+			blinkAus[k] = true
+		}
+	}
 	kameraAus := map[string]bool{}
-	for k, v := range state.KameraAus { if v { kameraAus[k] = true } }
+	for k, v := range state.KameraAus {
+		if v {
+			kameraAus[k] = true
+		}
+	}
+	timelapseAus := map[string]bool{}
+	for k, v := range state.TimelapseAus {
+		if v {
+			timelapseAus[k] = true
+		}
+	}
 	mu.Unlock()
-	if startFilter == "" { startFilter = "all" }
+	if startFilter == "" {
+		startFilter = "all"
+	}
 	if len(blinkModelList) == 0 {
 		blinkModelList = defaultBlinkModels
 	}
@@ -1975,11 +2191,11 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"theme": theme, "lang": lang, "cols": cols,
 		"error_blink": blink, "blink_models": blinkModelList, "filter_pillen": filterPillen,
 		"start_filter": startFilter, "blink_aus": blinkAus, "kamera_aus": kameraAus,
-		"sprache_gewaehlt": spracheGewaehlt})
+		"timelapse_aus": timelapseAus, "sprache_gewaehlt": spracheGewaehlt})
 }
 
-// handleOpenFolder oeffnet einen Ordner im Explorer. Ein Link auf file:// wuerde
-// aus einer http-Seite heraus vom Browser blockiert, deshalb der Umweg.
+// handleOpenFolder opens a folder in Explorer. A file:// link would
+// be blocked by the browser from an http page, hence the detour.
 func handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST erwartet", http.StatusMethodNotAllowed)
@@ -1994,7 +2210,7 @@ func handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	if target == "" {
 		target = appDir
 	}
-	// Nur eigene Verzeichnisse oeffnen — kein beliebiger Pfad von aussen
+	// Only open our own directories — no arbitrary path from outside
 	clean := filepath.Clean(target)
 	if !strings.HasPrefix(clean, filepath.Clean(appDir)) {
 		http.Error(w, "Pfad liegt ausserhalb des Datenverzeichnisses", http.StatusBadRequest)
@@ -2013,15 +2229,15 @@ func handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	default:
 		cmd = exec.Command("xdg-open", clean)
 	}
-	// explorer.exe liefert auch bei Erfolg einen Rueckgabewert ungleich 0
+	// explorer.exe returns a non-zero value even on success
 	_ = cmd.Start()
 	writeJSON(w, map[string]any{"opened": clean})
 }
 
 // ─── DIAGNOSE ─────────────────────────────────────────────────────────────────
 
-// handleDiagnostics fasst alles zusammen, was zur Fehlersuche bei go2rtc noetig
-// ist — damit nicht mehr geraten werden muss, was gerade los ist.
+// handleDiagnostics collects everything needed to debug go2rtc
+// — so one no longer has to guess what is going on.
 func handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -2089,7 +2305,7 @@ func handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// tailFile liefert die letzten n Zeilen einer Datei.
+// tailFile returns the last n lines of a file.
 func tailFile(path string, n int) []string {
 	b, err := os.ReadFile(path)
 	if err != nil {

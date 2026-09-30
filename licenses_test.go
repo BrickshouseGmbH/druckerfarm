@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-// Der Lizenz-Endpunkt schreibt die eingebettete Datei ins Datenverzeichnis
-// (und öffnet sie am echten System im Explorer — das ist im Test nicht prüfbar).
+// The license endpoint writes the embedded file into the data directory
+// (and opens it in Explorer on the real system — not testable here).
 func TestOpenLicensesSchreibtDatei(t *testing.T) {
 	if !strings.Contains(thirdPartyLicenses, "gorilla/websocket") {
 		t.Fatal("THIRD_PARTY_LICENSES.md scheint nicht eingebettet")
 	}
-	// Keine Erklärungstexte mehr — nur Nennung + Lizenztexte.
+	// No more explanatory text — only naming + license texts.
 	if strings.Contains(thirdPartyLicenses, "Diese Prüfung") || strings.Contains(thirdPartyLicenses, "Einschätzung") {
 		t.Error("Erklärungstexte sollten aus der Lizenzdatei entfernt sein")
 	}

@@ -10,27 +10,27 @@ import (
 
 // ─── NETZWERKVERKEHR ANHALTEN ─────────────────────────────────────────────────
 //
-// Es gibt Lagen, in denen das Programm im Netz schlicht still sein soll: waehrend
-// einer Wartung, bei einer Messung, oder wenn jemand anderes die Geraete
-// bedient. "Pausieren" heisst hier woertlich — nicht nur die Oberflaeche hoert
-// auf zu fragen, sondern auch der Server:
+// There are situations where the program should simply be quiet on the network: during
+// maintenance, a measurement, or when someone else operates the
+// devices. "Pause" is meant literally here — not only the UI stops
+// asking, but the server too:
 //
-//	– keine Statusabfragen und keine Bilder mehr
-//	– die MQTT-Verbindungen werden getrennt
-//	– go2rtc wird beendet, damit keine Kameraverbindungen offen bleiben
-//	– die Schleifen im Hintergrund setzen aus
+//	– no more status queries and no more images
+//	– the MQTT connections are dropped
+//	– go2rtc is stopped so no camera connections stay open
+//	– the background loops pause
 //
-// Absichtlich NICHT gespeichert: nach einem Neustart laeuft das Programm wieder.
-// Ein Schalter, der ueber Nacht stehen bleibt und am naechsten Morgen alles tot
-// aussehen laesst, waere eine Falle.
+// Deliberately NOT persisted: after a restart the program runs again.
+// A switch left on overnight that makes everything look dead the next
+// morning would be a trap.
 
 var netzPause atomic.Bool
 
-func netzPausiert() bool { return netzPause.Load() }
+func netPaused() bool { return netzPause.Load() }
 
-// setzeNetzPause haelt an oder laesst wieder los. Der Rueckgabewert sagt, was
-// dabei tatsaechlich passiert ist — die Oberflaeche zeigt das an.
-func setzeNetzPause(an bool) map[string]any {
+// setNetworkPause pauses or resumes. The return value says what
+// actually happened — the UI shows it.
+func setNetworkPause(an bool) map[string]any {
 	if netzPause.Load() == an {
 		return map[string]any{"pausiert": an, "geaendert": false}
 	}
@@ -51,8 +51,8 @@ func setzeNetzPause(an bool) map[string]any {
 	}
 
 	log.Printf("▶  Netzwerkverkehr wieder aufgenommen")
-	// Erst go2rtc, dann die Verbindungen — sonst stehen Kacheln da, fuer die es
-	// noch keinen Stream gibt.
+	// go2rtc first, then the connections — otherwise tiles remain for which there
+	// is no stream yet.
 	go func() {
 		startGo2rtc()
 		time.Sleep(500 * time.Millisecond)
@@ -61,17 +61,17 @@ func setzeNetzPause(an bool) map[string]any {
 	return map[string]any{"pausiert": false, "geaendert": true}
 }
 
-// stateAlsText dient nur dem Test: er stellt sicher, dass der Pausezustand
-// nicht versehentlich in der Konfiguration landet.
+// stateAlsText is only for the test: it ensures the pause state
+// does not accidentally end up in the configuration.
 func stateAlsText() string {
 	b, _ := json.Marshal(state)
 	return string(b)
 }
 
-func handleNetzPause(w http.ResponseWriter, r *http.Request) {
+func handleNetworkPause(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, map[string]any{"pausiert": netzPausiert()})
+		writeJSON(w, map[string]any{"pausiert": netPaused()})
 	case http.MethodPost:
 		var body struct {
 			Pausiert bool `json:"pausiert"`
@@ -80,7 +80,7 @@ func handleNetzPause(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, setzeNetzPause(body.Pausiert))
+		writeJSON(w, setNetworkPause(body.Pausiert))
 	default:
 		http.Error(w, "GET oder POST erwartet", http.StatusMethodNotAllowed)
 	}

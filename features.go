@@ -7,21 +7,21 @@ import (
 
 // ─── PER-DRUCKER-SCHALTER (Blinken / Kamera) ─────────────────────────────────
 
-// blinkAusFuer sagt, ob das Fehler-Blinken für diesen Drucker abgeschaltet ist.
+// blinkAusFuer reports whether error blinking is disabled for this printer.
 func blinkAusFuer(ip string) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	return state.BlinkAus[ip]
 }
 
-// kameraAusFuer sagt, ob die Kamera dieses Druckers dauerhaft aus ist.
-func kameraAusFuer(ip string) bool {
+// cameraOffFor reports whether this printer's camera is permanently off.
+func cameraOffFor(ip string) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	return state.KameraAus[ip]
 }
 
-// handleBlink schaltet das Fehler-Blinken für EINEN Drucker an/aus.
+// handleBlink turns error blinking on/off for ONE printer.
 func handleBlink(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST erwartet", http.StatusMethodNotAllowed)
@@ -44,7 +44,7 @@ func handleBlink(w http.ResponseWriter, r *http.Request) {
 	} else {
 		delete(state.BlinkAus, body.IP)
 	}
-	// Kopie für evtl. Licht-Reset
+	// copy for a possible light reset
 	var ziel *Printer
 	for i := range state.Printers {
 		if state.Printers[i].IP == body.IP {
@@ -63,8 +63,8 @@ func handleBlink(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ip": body.IP, "aus": body.Aus})
 }
 
-// handleCameraOff schaltet die Kamera EINES Druckers dauerhaft an/aus (Anzeige
-// „Private", kein Stream). Rein lokal — go2rtc wird nicht verändert.
+// handleCameraOff turns ONE printer's camera permanently on/off (shows
+// "Private", no stream). Purely local — go2rtc is not changed.
 func handleCameraOff(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST erwartet", http.StatusMethodNotAllowed)

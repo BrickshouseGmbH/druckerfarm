@@ -33,8 +33,8 @@ func resetFails(t *testing.T) {
 	t.Cleanup(func() { go2rtcMu.Lock(); go2rtcFails = old; go2rtcMu.Unlock() })
 }
 
-// Bei vielen Druckern muss das Intervall angehoben werden — sonst treffen mehr
-// Bildanfragen ein, als go2rtc verarbeiten kann.
+// With many printers the interval must be raised — otherwise more
+// image requests arrive than go2rtc can process.
 func TestIntervalScalesWithPrinterCount(t *testing.T) {
 	resetFails(t)
 	cases := []struct {
@@ -55,7 +55,7 @@ func TestIntervalScalesWithPrinterCount(t *testing.T) {
 	}
 }
 
-// Ein größeres Wunschintervall darf nicht verkleinert werden.
+// A larger desired interval must not be shrunk.
 func TestLongerIntervalIsKept(t *testing.T) {
 	resetFails(t)
 	withPrinters(t, 3)
@@ -64,7 +64,7 @@ func TestLongerIntervalIsKept(t *testing.T) {
 	}
 }
 
-// Stürzt go2rtc wiederholt ab, wird weiter zurückgefahren.
+// If go2rtc crashes repeatedly, it is throttled further.
 func TestIntervalBacksOffAfterCrashes(t *testing.T) {
 	withPrinters(t, 42)
 	go2rtcMu.Lock()
@@ -85,7 +85,7 @@ func TestIntervalBacksOffAfterCrashes(t *testing.T) {
 	t.Logf("ohne Abstürze alle %v, nach 3 Abstürzen alle %v", base, after)
 }
 
-// Die Oberfläche muss erfahren, welches Intervall wirklich gilt.
+// The UI must learn which interval actually applies.
 func TestResponseAnnouncesEffectiveInterval(t *testing.T) {
 	resetFails(t)
 	var hits int64
@@ -119,7 +119,7 @@ func TestResponseAnnouncesEffectiveInterval(t *testing.T) {
 		t.Fatalf("gemeldetes Intervall zu kurz: %d s", iv)
 	}
 
-	// Zweite Anfrage kurz danach darf go2rtc nicht erneut belasten
+	// A second request shortly after must not burden go2rtc again
 	rec2 := httptest.NewRecorder()
 	handleSnapshot(rec2, httptest.NewRequest("GET", "/api/snapshot/10.0.0.1?max_age=2", nil))
 	if got := atomic.LoadInt64(&hits); got != 1 {

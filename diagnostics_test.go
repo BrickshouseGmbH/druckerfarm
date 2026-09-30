@@ -12,8 +12,8 @@ import (
 	"testing"
 )
 
-// Der Prüfstand stellt go2rtc nach: /api/streams sagt, ob ein Stream bekannt ist,
-// /api/frame.jpeg liefert 200 mit leerem Rumpf, so wie das echte go2rtc.
+// The test harness mimics go2rtc: /api/streams says whether a stream is known,
+// /api/frame.jpeg returns 200 with an empty body, like the real go2rtc.
 func fakeGo2rtc(t *testing.T, known map[string]bool) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +49,7 @@ func withFFmpeg(t *testing.T, present bool) {
 	}
 }
 
-// Kennt go2rtc den Stream nicht, ist die Konfiguration veraltet — nicht ffmpeg schuld.
+// If go2rtc does not know the stream, the config is stale — not ffmpeg's fault.
 func TestDiagnoseUnknownStream(t *testing.T) {
 	fakeGo2rtc(t, map[string]bool{})
 	withFFmpeg(t, true)
@@ -64,13 +64,13 @@ func TestDiagnoseUnknownStream(t *testing.T) {
 	}
 }
 
-// Fehlt ffmpeg wirklich, soll das auch dranstehen.
+// If ffmpeg is really missing, that should be stated too.
 func TestDiagnoseMissingFFmpeg(t *testing.T) {
 	fakeGo2rtc(t, map[string]bool{"woobly-10": true})
 	withFFmpeg(t, false)
 	setPrinters(Printer{Name: "woobly 10", IP: "10.0.0.10"})
 
-	// Nur aussagekräftig, wenn auch systemweit keins liegt
+	// Only meaningful if there is none system-wide either
 	if _, err := os.Stat("/usr/bin/ffmpeg"); err == nil {
 		t.Skip("systemweites ffmpeg vorhanden")
 	}
@@ -80,7 +80,7 @@ func TestDiagnoseMissingFFmpeg(t *testing.T) {
 	}
 }
 
-// Der häufigste Fall in der Farm: Stream bekannt, ffmpeg da, Kamera antwortet nicht.
+// The most common case on the farm: stream known, ffmpeg present, camera silent.
 func TestDiagnoseCameraUnreachable(t *testing.T) {
 	fakeGo2rtc(t, map[string]bool{"woobly-10": true})
 	withFFmpeg(t, true)
@@ -99,7 +99,7 @@ func TestDiagnoseCameraUnreachable(t *testing.T) {
 	t.Logf("Meldung: %s", msg)
 }
 
-// Antwortet der Drucker per MQTT, aber die Kamera nicht, soll das unterschieden werden.
+// If the printer answers via MQTT but the camera does not, that should be distinguished.
 func TestDiagnoseOnlineButNoCamera(t *testing.T) {
 	fakeGo2rtc(t, map[string]bool{"woobly-10": true})
 	withFFmpeg(t, true)
@@ -121,7 +121,7 @@ func TestDiagnoseOnlineButNoCamera(t *testing.T) {
 	t.Logf("Meldung: %s", msg)
 }
 
-// Port offen, aber kein Bild — dann ist meist der Zugangscode falsch.
+// Port open but no image — then usually the access code is wrong.
 func TestDiagnosePortOpenButNoImage(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -141,8 +141,8 @@ func TestDiagnosePortOpenButNoImage(t *testing.T) {
 	fakeGo2rtc(t, map[string]bool{"kamera": true})
 	withFFmpeg(t, true)
 
-	// Der Test braucht Port 322 — deshalb wird hier nur der Zweig geprüft,
-	// der greift, wenn die Verbindung steht.
+	// The test needs port 322 — so only the branch is checked here
+	// that applies when the connection is up.
 	host, _, _ := net.SplitHostPort(ln.Addr().String())
 	setPrinters(Printer{Name: "kamera", IP: host})
 	msg := diagnoseStream("kamera")
@@ -152,7 +152,7 @@ func TestDiagnosePortOpenButNoImage(t *testing.T) {
 	t.Logf("Meldung: %s", msg)
 }
 
-// Die vollständige Fehlermeldung, wie sie in der Kachel landet.
+// The full error message as it ends up in the tile.
 func TestSnapshotErrorMentionsRealCause(t *testing.T) {
 	fakeGo2rtc(t, map[string]bool{})
 	withFFmpeg(t, true)

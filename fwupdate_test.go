@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Der Drucker meldet in new_ver_list eine Baugruppe mit neuerer Nummer.
+// The printer reports a module with a newer number in new_ver_list.
 func TestUpgradeStateFindetOffenesUpdate(t *testing.T) {
 	raw := `{"new_ver_list":[
 		{"name":"ota","cur_ver":"01.07.00.00","new_ver":"01.08.02.00"},
@@ -22,7 +22,7 @@ func TestUpgradeStateFindetOffenesUpdate(t *testing.T) {
 	}
 }
 
-// Ist die laufende Fassung schon gleich der "neuen", ist nichts offen.
+// If the running build already equals the "new" one, nothing is pending.
 func TestUpgradeStateIgnoriertGleichstand(t *testing.T) {
 	raw := `{"new_ver_list":[{"name":"ota","cur_ver":"01.08.02.00","new_ver":"01.08.02.00"}]}`
 	var v interface{}
@@ -41,17 +41,17 @@ func TestUpgradeStateLeer(t *testing.T) {
 	}
 }
 
-// nochOffen streicht ein Update, sobald die laufende Firmware es erreicht hat.
+// nochOffen removes an update once the running firmware has reached it.
 func TestNochOffenStreichtInstalliertes(t *testing.T) {
-	list := []FwModulUpdate{
+	list := []FwModuleUpdate{
 		{Modul: "ota", Aktuell: "01.07.00.00", Neu: "01.08.02.00"},
 		{Modul: "ams/0", Aktuell: "00.00.06.49", Neu: "00.00.07.89"},
 	}
 	st := &PrinterStatus{
 		Online: true,
-		Info: &GeraeteInfo{
+		Info: &DeviceInfo{
 			Firmware: "01.08.02.00", // ota jetzt installiert
-			AMS:      []ModulVersion{{Name: "ams/0", SW: "00.00.06.49"}},
+			AMS:      []ModuleVersion{{Name: "ams/0", SW: "00.00.06.49"}},
 		},
 	}
 	got := nochOffen(list, st)
@@ -60,19 +60,19 @@ func TestNochOffenStreichtInstalliertes(t *testing.T) {
 	}
 }
 
-// Ohne Statusinfo (offline) bleibt die Liste unangetastet.
+// Without status info (offline) the list stays untouched.
 func TestNochOffenOhneStatusUnveraendert(t *testing.T) {
-	list := []FwModulUpdate{{Modul: "ota", Aktuell: "01.07.00.00", Neu: "01.08.02.00"}}
+	list := []FwModuleUpdate{{Modul: "ota", Aktuell: "01.07.00.00", Neu: "01.08.02.00"}}
 	if got := nochOffen(list, nil); len(got) != 1 {
 		t.Errorf("offline soll erhalten bleiben, bekam %+v", got)
 	}
 }
 
-// Kennt das Programm die laufende Firmware nicht, gilt der Fund-Stand — das
-// Update bleibt offen (kein falsches Wegräumen).
+// If the program does not know the running firmware, the discovery state applies — the
+// update stays open (no wrong cleanup).
 func TestNochOffenOhneInfoBehaeltFund(t *testing.T) {
-	list := []FwModulUpdate{{Modul: "ota", Aktuell: "01.07.00.00", Neu: "01.08.02.00"}}
-	st := &PrinterStatus{Online: true} // kein Info
+	list := []FwModuleUpdate{{Modul: "ota", Aktuell: "01.07.00.00", Neu: "01.08.02.00"}}
+	st := &PrinterStatus{Online: true} // no info
 	if got := nochOffen(list, st); len(got) != 1 {
 		t.Errorf("ohne Info soll offen bleiben, bekam %+v", got)
 	}
@@ -89,7 +89,7 @@ func TestUpgradeStateX1EinzelfelderAMS(t *testing.T) {
 	}
 }
 
-// X1: OTA und AMS gleichzeitig offen.
+// X1: OTA and AMS pending at the same time.
 func TestUpgradeStateX1BeideModule(t *testing.T) {
 	raw := `{"new_version_state":2,"ota_new_version_number":"01.08.02.00","ams_new_version_number":"00.00.07.89"}`
 	var v interface{}
@@ -100,7 +100,7 @@ func TestUpgradeStateX1BeideModule(t *testing.T) {
 }
 
 // Echter X1E (woobly 7): new_version_state==1, ABER ota_new_version_number
-// gefüllt — das ist ein Update. Der Zustand taugt nicht als Schalter.
+// filled — that is an update. The state is not a suitable switch.
 func TestUpgradeStateEchterX1E(t *testing.T) {
 	raw := `{"ahb_new_version_number":"","ams_new_version_number":"","consistency_request":false,"dis_state":0,"err_code":0,"ext_new_version_number":"","force_upgrade":false,"idx":5,"lower_limit":"00.00.00.00","message":"","module":"","new_version_state":1,"ota_new_version_number":"01.03.00.00","progress":"0","sequence_id":0,"sn":"03W09C442102388","status":"IDLE"}`
 	var v interface{}
@@ -111,7 +111,7 @@ func TestUpgradeStateEchterX1E(t *testing.T) {
 	}
 }
 
-// Echter H2 (woobly h12): new_version_state==0, alle Nummernfelder leer — nichts
+// Real H2 (woobly h12): new_version_state==0, all number fields empty — nothing
 // offen.
 func TestUpgradeStateEchterH2Nichts(t *testing.T) {
 	raw := `{"ahb_new_version_number":"","ams_new_version_number":"","consistency_request":false,"dis_state":0,"err_code":0,"ext_new_version_number":"","force_upgrade":false,"idx":2722,"lower_limit":"00.00.00.00","message":"","module":"","new_version_state":0,"ota_new_version_number":"","progress":"0","sequence_id":0,"sn":"31B8BP610600131","status":"IDLE","upgrade_fail_list":[],"upgrade_type":"unknown"}`
@@ -122,7 +122,7 @@ func TestUpgradeStateEchterH2Nichts(t *testing.T) {
 	}
 }
 
-// Platzhalter 00.00.00.00 ist kein Update.
+// Placeholder 00.00.00.00 is not an update.
 func TestUpgradeStateX1NullVersion(t *testing.T) {
 	raw := `{"new_version_state":2,"ota_new_version_number":"00.00.00.00","ams_new_version_number":"00.00.00.00"}`
 	var v interface{}
@@ -132,18 +132,18 @@ func TestUpgradeStateX1NullVersion(t *testing.T) {
 	}
 }
 
-// Das generische "ams" (ohne Index) wird gegen den niedrigsten AMS-Stand
-// geprüft: liegt ein AMS darunter, bleibt das Update offen.
+// The generic "ams" (without index) is checked against the lowest AMS level
+// : if any AMS is below, the update stays open.
 func TestNochOffenAmsGenerischNiedrigsterStand(t *testing.T) {
-	list := []FwModulUpdate{{Modul: "ams", Neu: "00.00.07.89"}}
-	st := &PrinterStatus{Online: true, Info: &GeraeteInfo{AMS: []ModulVersion{
-		{Name: "ams/0", SW: "00.00.07.89"}, // schon aktuell
-		{Name: "ams/1", SW: "00.00.06.49"}, // noch alt -> Update offen
+	list := []FwModuleUpdate{{Modul: "ams", Neu: "00.00.07.89"}}
+	st := &PrinterStatus{Online: true, Info: &DeviceInfo{AMS: []ModuleVersion{
+		{Name: "ams/0", SW: "00.00.07.89"}, // already current
+		{Name: "ams/1", SW: "00.00.06.49"}, // still old -> update pending
 	}}}
 	if got := nochOffen(list, st); len(got) != 1 {
 		t.Errorf("mindestens ein AMS ist alt -> Update offen, bekam %+v", got)
 	}
-	// Sind alle aktuell, ist nichts mehr offen.
+	// If all are current, nothing is pending.
 	st.Info.AMS[1].SW = "00.00.07.89"
 	if got := nochOffen(list, st); len(got) != 0 {
 		t.Errorf("alle AMS aktuell -> nichts offen, bekam %+v", got)

@@ -42,7 +42,7 @@ func TestXiaomiProxyLeitetWeiter(t *testing.T) {
 	if !strings.Contains(gesehenBody, "geheim") {
 		t.Fatalf("Body nicht weitergeleitet: %q", gesehenBody)
 	}
-	// Zugangsdaten dürfen NICHT in der Query landen
+	// Credentials must NOT end up in the query
 	if strings.Contains(gesehenQuery, "geheim") || strings.Contains(gesehenQuery, "password") {
 		t.Fatalf("Passwort in der URL/Query gelandet: %q", gesehenQuery)
 	}

@@ -9,17 +9,12 @@ import (
 
 // ─── UPLOAD-HISTORIE ──────────────────────────────────────────────────────────
 //
-// Was wann auf welchen Drucker geladen wurde, stand bisher nur in der Anzeige
-// des laufenden Vorgangs — nach einem Neustart war es weg. Die Historie liegt
-// jetzt in der Konfiguration in %APPDATA% und ueberlebt Neustarts.
-//
-// Aufgehoben werden hoechstens uploadLogMax Eintraege; die aeltesten fallen
-// hinten heraus. Bei 42 Druckern und mehreren Dateien je Auftrag waeren sonst
-// schnell zehntausende Zeilen beisammen.
+// What was uploaded to which printer and when used to live only in the display
+// of the running job — after a restart it was gone. The history now lives
+// in its own file (upload_log.json) in %APPDATA% and survives restarts.
+// Everything is kept without a limit.
 
-const uploadLogMax = 2000
-
-type UploadEintrag struct {
+type UploadEntry struct {
 	Zeit   time.Time `json:"zeit"`
 	IP     string    `json:"ip"`
 	Name   string    `json:"name"`
@@ -30,27 +25,24 @@ type UploadEintrag struct {
 	Dauer  int64     `json:"dauer_ms,omitempty"`
 }
 
-// merkeUpload haengt einen Eintrag an und speichert. Fehler beim Speichern
-// duerfen den Upload selbst nicht stoeren, deshalb wird hier nichts
+// noteUpload appends an entry and saves. A save error must not disturb the
+// upload itself, so nothing is
 // zurueckgemeldet.
-func merkeUpload(e UploadEintrag) {
+func noteUpload(e UploadEntry) {
 	if e.Zeit.IsZero() {
 		e.Zeit = time.Now()
 	}
 	mu.Lock()
 	state.UploadLog = append(state.UploadLog, e)
-	if len(state.UploadLog) > uploadLogMax {
-		state.UploadLog = state.UploadLog[len(state.UploadLog)-uploadLogMax:]
-	}
 	mu.Unlock()
-	saveState()
+	saveUploadLog()
 }
 
 func handleUploadLog(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		mu.Lock()
-		liste := make([]UploadEintrag, len(state.UploadLog))
+		liste := make([]UploadEntry, len(state.UploadLog))
 		copy(liste, state.UploadLog)
 		mu.Unlock()
 		// Neueste zuerst — danach sucht man.
@@ -70,7 +62,7 @@ func handleUploadLog(w http.ResponseWriter, r *http.Request) {
 			"gesamt":    len(liste),
 			"erfolge":   erfolge,
 			"fehler":    fehler,
-			"grenze":    uploadLogMax,
+			"grenze":    0, // 0 = unbegrenzt
 		})
 
 	case http.MethodDelete:
@@ -78,7 +70,7 @@ func handleUploadLog(w http.ResponseWriter, r *http.Request) {
 		anzahl := len(state.UploadLog)
 		state.UploadLog = nil
 		mu.Unlock()
-		saveState()
+		saveUploadLog()
 		writeJSON(w, map[string]any{"geleert": anzahl})
 
 	default:

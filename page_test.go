@@ -5,24 +5,24 @@ import (
 	"testing"
 )
 
-// Die Versionsnummer muss serverseitig in die Seite eingesetzt werden, damit sie
-// schon auf dem Startbild (Gorilla-Ladeseite) steht.
+// The version number must be inserted into the page server-side so it
+// already shows on the splash (gorilla loading page).
 func TestSeiteMitVersionErsetztPlatzhalter(t *testing.T) {
-	html := seiteMitVersion()
+	html := pageWithVersion()
 	if strings.Contains(html, "__APP_VERSION__") {
 		t.Error("Platzhalter __APP_VERSION__ blieb in der ausgelieferten Seite stehen")
 	}
 	if !strings.Contains(html, "Version "+appVersion) {
 		t.Errorf("erwartete 'Version %s' in der Seite, nicht gefunden", appVersion)
 	}
-	// Copyright ohne den alten Zusatz.
+	// Copyright without the old addendum.
 	if strings.Contains(html, "Reinhard @ Brickshouse") {
 		t.Error("altes Copyright mit 'Reinhard @' noch vorhanden")
 	}
 	if !strings.Contains(html, "© Brickshouse GmbH · Druckerfarm.ch") {
 		t.Error("neues Copyright nicht gefunden")
 	}
-	// Übersetzungen müssen injiziert sein — Platzhalter weg, Schlüssel da.
+	// Translations must be injected — placeholder gone, keys present.
 	if strings.Contains(html, "__LANGS_JSON__") {
 		t.Error("Platzhalter __LANGS_JSON__ blieb stehen — Sprachdateien nicht injiziert")
 	}

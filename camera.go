@@ -10,28 +10,29 @@ import (
 
 // ─── STANDALONE-KAMERAS ───────────────────────────────────────────────────────
 //
-// Neben den Druckerkameras kann das Tool eigenständige Videoquellen einbinden
-// (z. B. eine Outdoor-Kamera). Sie hängen NICHT an einem Druckerobjekt und
+// Besides the printer cameras, the tool can embed standalone video sources
+// (e.g. an outdoor camera). They are NOT tied to a printer object and have
 // tauchen daher in keiner druckerbezogenen Auswertung auf: keine SSDP-Discovery,
-// keine MQTT-Verbindung, kein FTP-Sync, keine Druckerzählung. Der einzige
-// Berührungspunkt ist go2rtc — die Quelle wird als Stream in die go2rtc.yaml
-// geschrieben, damit WebRTC und Snapshot wie bei den Druckern funktionieren.
+// no MQTT connection, no FTP sync, no printer count. The only
+// touch point is go2rtc — the source is written as a stream into go2rtc.yaml
+// so WebRTC and snapshot work just like for the printers.
 
 type CameraCfg struct {
 	ID     string `json:"id"`     // interne Kennung, z. B. "cw300"
-	Name   string `json:"name"`   // Anzeigename, z. B. "Außenkamera Büro"
+	Name   string `json:"name"`   // display name, e.g. "Outdoor camera office"
 	Stream string `json:"stream"` // go2rtc-Streamname (meist == ID)
-	// Source ist die vollständige go2rtc-Quelle inkl. Zugangsdaten
-	// (z. B. xiaomi://user:pass@ip?did=…). Sie wird in die go2rtc.yaml
-	// geschrieben — das übernimmt das Tool, der Anwender fasst go2rtc nicht an.
+	// Source is the full go2rtc source including credentials
+	// (e.g. xiaomi://user:pass@ip?did=…). It is written into go2rtc.yaml
+	// — the tool does this; the user does not touch go2rtc.
 	// WICHTIG: niemals in Logs ausgeben.
 	Source string `json:"source,omitempty"`
 	Kind   string `json:"kind,omitempty"` // immer "standalone"
+	Fav    bool   `json:"fav,omitempty"`  // als Favorit markiert
 }
 
-// cameraStreamsYaml erzeugt die go2rtc-Streamzeilen für die Standalone-Kameras.
-// Wird an die Drucker-YAML angehängt, damit ein Neuschreiben der Datei die
-// Kameras nicht verliert.
+// cameraStreamsYaml generates the go2rtc stream lines for the standalone cameras.
+// Appended to the printer YAML so rewriting the file does not lose the
+// cameras.
 func cameraStreamsYaml(cams []CameraCfg) string {
 	var sb strings.Builder
 	for _, c := range cams {
@@ -46,8 +47,8 @@ func cameraStreamsYaml(cams []CameraCfg) string {
 	return sb.String()
 }
 
-// kameraStreamName liefert den go2rtc-Streamnamen zu einer Kamera-ID (oder "").
-func kameraStreamName(id string) string {
+// cameraStreamName returns the go2rtc stream name for a camera ID (or "").
+func cameraStreamName(id string) string {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, c := range state.Cameras {
@@ -61,7 +62,7 @@ func kameraStreamName(id string) string {
 	return ""
 }
 
-// handleCameras: GET listet die Kameras, POST legt an/aktualisiert.
+// handleCameras: GET lists the cameras, POST creates/updates.
 func handleCameras(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch r.Method {
@@ -97,6 +98,7 @@ func handleCameras(w http.ResponseWriter, r *http.Request) {
 		ersetzt := false
 		for i := range state.Cameras {
 			if state.Cameras[i].ID == c.ID {
+				c.Fav = state.Cameras[i].Fav // keep the favorite marker when editing
 				state.Cameras[i] = c
 				ersetzt = true
 				break
@@ -109,7 +111,7 @@ func handleCameras(w http.ResponseWriter, r *http.Request) {
 		saveState()
 		writeGo2rtcYaml()
 		restartGo2rtcAsync()
-		// Kein Logging der Source (enthält Zugangsdaten).
+		// No logging of the source (contains credentials).
 		ausgabe := c
 		_ = json.NewEncoder(w).Encode(ausgabe)
 
@@ -126,6 +128,33 @@ func handleCameraByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodPatch:
+		// Only toggle the favorite marker — without a go2rtc restart.
+		var body struct {
+			Fav *bool `json:"fav"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		found := false
+		for i := range state.Cameras {
+			if state.Cameras[i].ID == id {
+				if body.Fav != nil {
+					state.Cameras[i].Fav = *body.Fav
+				}
+				found = true
+				break
+			}
+		}
+		mu.Unlock()
+		if !found {
+			http.Error(w, "unbekannte Kamera", http.StatusNotFound)
+			return
+		}
+		saveState()
+		writeJSON(w, map[string]any{"ok": true})
 	case http.MethodDelete:
 		mu.Lock()
 		neu := state.Cameras[:0:0]
@@ -152,7 +181,7 @@ func handleCameraByID(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// slugID macht aus einem Namen eine schlanke ID (a–z, 0–9, Bindestrich).
+// slugID turns a name into a slim ID (a–z, 0–9, hyphen).
 func slugID(name string) string {
 	var sb strings.Builder
 	prev := false
@@ -168,10 +197,10 @@ func slugID(name string) string {
 	return strings.Trim(sb.String(), "-")
 }
 
-// istKameraStream sagt, ob ein go2rtc-Streamname zu einer Standalone-Kamera
-// gehört (Stream oder ID). Damit kann die Snapshot-Diagnose Kameras von
-// Druckern trennen — die Kamera-Logik bleibt hier, nicht im Drucker-Teil.
-func istKameraStream(stream string) bool {
+// isCameraStream reports whether a go2rtc stream name belongs to a standalone
+// camera (stream or ID). This lets the snapshot diagnostics separate cameras
+// from printers — the camera logic stays here, not in the printer part.
+func isCameraStream(stream string) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, c := range state.Cameras {
@@ -182,8 +211,8 @@ func istKameraStream(stream string) bool {
 	return false
 }
 
-// kameraName liefert den Anzeigenamen zu einem Kamera-Stream/ID (oder "").
-func kameraName(stream string) string {
+// cameraName returns the display name for a camera stream/ID (or "").
+func cameraName(stream string) string {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, c := range state.Cameras {
@@ -194,26 +223,26 @@ func kameraName(stream string) string {
 	return ""
 }
 
-// kameraStreamDiagnose erklärt, warum eine Kamera kein Bild liefert — ohne jede
-// Drucker-Annahme (keine MQTT-/Port-322-Prüfung, keinen Zugangscode). Die
-// Xiaomi-Quelle verbindet per P2P; für den Sitzungsschlüssel wird kurz Internet
-// gebraucht. Bewusst knapp und kameraspezifisch.
-func kameraStreamDiagnose(stream string) string {
-	name := kameraName(stream)
+// cameraStreamDiagnostics explains why a camera returns no image — without any
+// printer assumptions (no MQTT/port-322 check, no access code). The
+// Xiaomi source connects via P2P; the session key briefly needs internet.
+// Deliberately terse and camera-specific.
+func cameraStreamDiagnostics(stream string) string {
+	name := cameraName(stream)
 	if name == "" {
 		name = stream
 	}
 	basis := `Kamera „` + name + `" liefert gerade kein Bild`
-	if e := go2rtcProducerFehler(stream); e != "" {
+	if e := go2rtcProducerError(stream); e != "" {
 		return basis + " — go2rtc meldet: " + e
 	}
 	return basis + ` — Kamera erreichbar? (Beim Verbindungsaufbau braucht go2rtc kurz Internet für den Xiaomi-Sitzungsschlüssel. Falls „xiaomi"/Login-Fehler: der Mi-Home-Login muss in genau dieser go2rtc-Instanz hinterlegt sein.)`
 }
 
-// go2rtcProducerFehler fragt go2rtc nach dem konkreten Fehler eines Streams
-// (z. B. „xiaomi: login failed"). Best-effort — schlägt die Abfrage fehl,
-// kommt "" zurück und die allgemeine Meldung greift.
-func go2rtcProducerFehler(stream string) string {
+// go2rtcProducerError asks go2rtc for the concrete error of a stream
+// (e.g. "xiaomi: login failed"). Best-effort — if the query fails,
+// "" is returned and the generic message applies.
+func go2rtcProducerError(stream string) string {
 	u := fmt.Sprintf("http://127.0.0.1:%d/api/streams?src=%s", go2rtcPort, url.QueryEscape(stream))
 	resp, err := snapClient.Get(u)
 	if err != nil {
@@ -224,7 +253,7 @@ func go2rtcProducerFehler(stream string) string {
 	if json.NewDecoder(resp.Body).Decode(&v) != nil {
 		return ""
 	}
-	// Rekursiv nach "error"-Feldern suchen und den ersten nichtleeren Text nehmen.
+	// Search recursively for "error" fields and take the first non-empty text.
 	var suche func(any) string
 	suche = func(n any) string {
 		switch t := n.(type) {
@@ -250,10 +279,10 @@ func go2rtcProducerFehler(stream string) string {
 }
 
 // erhalteFremdeSektionen liest aus einer bestehenden go2rtc.yaml alle
-// Top-Level-Abschnitte heraus, die NICHT von diesem Tool verwaltet werden
-// (also nicht "api" und nicht "streams"). Genau dort legt go2rtc z. B. die
-// Mi-Home-Zugangsdaten/Tokens ab. Sie werden beim Neuschreiben angehängt, damit
-// ein einmal erfolgter Xiaomi-Login erhalten bleibt.
+// top-level sections that are NOT managed by this tool
+// (i.e. not "api" and not "streams"). That is exactly where go2rtc stores e.g. the
+// Mi-Home credentials/tokens. They are appended when rewriting so that
+// a completed Xiaomi login is preserved.
 func erhalteFremdeSektionen(vorhanden string) string {
 	if strings.TrimSpace(vorhanden) == "" {
 		return ""

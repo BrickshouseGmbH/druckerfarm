@@ -122,8 +122,8 @@ func TestEmptyBodyBecomesError(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("want 503, got %d", rec.Code)
 	}
-	// Die Meldung soll den tatsächlichen Grund nennen, nicht pauschal ffmpeg
-	// verdächtigen — ffmpeg ist auf der Farm nachweislich installiert.
+	// The message should name the actual cause, not blame ffmpeg
+	// wholesale — ffmpeg is provably installed on the farm.
 	body := rec.Body.String()
 	if !strings.Contains(body, "kein Bild") {
 		t.Fatalf("reason missing: %q", body)

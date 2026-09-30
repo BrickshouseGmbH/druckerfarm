@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Antwort auf get_version, wie sie das Protokoll beschreibt.
+// Response to get_version as the protocol describes it.
 func TestParseVersionReport(t *testing.T) {
 	payload := []byte(`{"info":{"command":"get_version","sequence_id":"9001","module":[
 		{"name":"ota","hw_ver":"","sw_ver":"01.08.02.00","sn":""},
@@ -30,7 +30,7 @@ func TestParseVersionReport(t *testing.T) {
 	}
 }
 
-// Statusmeldungen duerfen nicht als Versionsantwort durchgehen.
+// Status messages must not pass as a version response.
 func TestParseVersionIgnoriertStatus(t *testing.T) {
 	for _, p := range []string{
 		`{"print":{"gcode_state":"RUNNING"}}`,
@@ -44,7 +44,7 @@ func TestParseVersionIgnoriertStatus(t *testing.T) {
 	}
 }
 
-// "ams/0" ist das erste AMS und heisst fuer den Anwender "AMS 1".
+// "ams/0" is the first AMS and is called "AMS 1" for the user.
 func TestAmsBezeichnung(t *testing.T) {
 	f := map[string]string{"ams/0": "AMS 1", "ams/1": "AMS 2", "ams_2": "AMS 3", "ams": "AMS"}
 	for ein, will := range f {
@@ -57,11 +57,11 @@ func TestAmsBezeichnung(t *testing.T) {
 func TestLaufzeitText(t *testing.T) {
 	f := map[int64]string{0: "", 90: "1 min", 3600: "1 h 0 min", 5400: "1 h 30 min", 3600 * 4000: "4000 h"}
 	for sek, will := range f {
-		if got := laufzeitText(sek); got != will {
+		if got := runtimeText(sek); got != will {
 			t.Fatalf("%d s -> %q, erwartet %q", sek, got, will)
 		}
 	}
-	if !strings.Contains(laufzeitText(3600*150), "150 h") {
+	if !strings.Contains(runtimeText(3600*150), "150 h") {
 		t.Fatal("ab 100 Stunden ohne Minuten")
 	}
 }

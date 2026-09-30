@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// Der Python-Traceback landete frueher unveraendert in der Oberflaeche. Diese
+// The Python traceback used to land unchanged in the UI. These
 // Faelle stammen aus echten Ausgaben des Hilfsskripts.
 func TestFriendlyFTPError(t *testing.T) {
 	cases := []struct {
@@ -10,10 +10,10 @@ func TestFriendlyFTPError(t *testing.T) {
 	}{
 		{"Zeitueberschreitung",
 			"Traceback (most recent call last):\n  File \"x.py\", line 40, in <module>\n    ftp.connect(host, 990)\nTimeoutError: [WinError 10060] Ein Verbindungsversuch ist fehlgeschlagen\n",
-			"Zeitüberschreitung — Drucker antwortet nicht auf Port 990"},
+			"Zeitüberschreitung auf Port 990 — am Drucker den LAN-/Entwicklermodus einschalten (Einstellungen › Allgemein) und sicherstellen, dass er nicht nur im Cloud-Modus läuft. Einen anderen FTP-Port gibt es beim Drucker nicht."},
 		{"abgelehnt",
 			"ConnectionRefusedError: [WinError 10061] Es konnte keine Verbindung hergestellt werden",
-			"Verbindung abgelehnt — FTP am Drucker aus oder falscher Port"},
+			"Verbindung auf Port 990 abgelehnt — FTP/LAN-Modus am Drucker ist aus. Einen anderen Port bietet der Drucker nicht."},
 		{"kein Weg",
 			"OSError: [Errno 113] No route to host",
 			"Drucker nicht erreichbar — im Netz nicht auffindbar"},
@@ -33,7 +33,7 @@ func TestFriendlyFTPError(t *testing.T) {
 	}
 }
 
-// Unbekanntes bleibt erhalten, aber nur die letzte Zeile und gekuerzt.
+// Unknown text is kept, but only the last line and truncated.
 func TestFriendlyFTPErrorUnbekannt(t *testing.T) {
 	raw := "Traceback (most recent call last):\n  File \"x.py\", line 1\nValueError: irgendwas Eigenartiges"
 	got := friendlyFTPError(raw)
@@ -46,8 +46,8 @@ func TestFriendlyFTPErrorUnbekannt(t *testing.T) {
 	}
 }
 
-// Waehrend eines laufenden Drucks darf eine alte HMS-Meldung das Licht nicht
-// weiter blinken lassen. Genau das war der Grund, warum die Kammer nach dem
+// During a running print an old HMS message must not keep the light
+// blinking. That was exactly why the chamber, after
 // Fortsetzen weiter blinkte.
 func TestPrinterHasErrorWaehrendDruck(t *testing.T) {
 	cases := []struct {
@@ -83,8 +83,8 @@ func TestPrinterHasErrorWaehrendDruck(t *testing.T) {
 	}
 }
 
-// Der Ablauf, den der Anwender gemeldet hat: Stoerung, quittiert am Geraet,
-// Druck laeuft weiter — und der X1 schickt die alte Meldung trotzdem weiter mit.
+// The sequence the user reported: fault, acknowledged on the device,
+// print continues — and the X1 keeps sending the old message anyway.
 func TestBlinkenEndetNachFortsetzen(t *testing.T) {
 	ip := "10.9.9.77"
 	mqttMgr.mu.Lock()
@@ -96,13 +96,13 @@ func TestBlinkenEndetNachFortsetzen(t *testing.T) {
 		mqttMgr.mu.Unlock()
 	}()
 
-	// 1. Stoerung waehrend der Pause -> es muss blinken
+	// 1. Fault during the pause -> it must blink
 	mqttMgr.handleMessage(ip, []byte(`{"print":{"gcode_state":"PAUSE","hms":[{"ecode":"0300_0100"}]}}`))
 	if !printerHasError(mqttMgr.GetStatus(ip)) {
 		t.Fatal("Stoerung in der Pause muss blinken")
 	}
 
-	// 2. Anwender quittiert am Geraet und setzt fort
+	// 2. User acknowledges on the device and resumes
 	mqttMgr.handleMessage(ip, []byte(`{"print":{"gcode_state":"RUNNING","mc_percent":41}}`))
 	if printerHasError(mqttMgr.GetStatus(ip)) {
 		t.Fatal("nach dem Fortsetzen darf nicht mehr geblinkt werden")
@@ -114,7 +114,7 @@ func TestBlinkenEndetNachFortsetzen(t *testing.T) {
 		t.Fatal("die wiederholte alte Meldung darf das Blinken nicht neu ausloesen")
 	}
 
-	// 4. Eine wirklich neue Stoerung waehrend des Drucks muss durchkommen
+	// 4. A truly new fault during the print must get through
 	mqttMgr.handleMessage(ip, []byte(`{"print":{"gcode_state":"RUNNING","hms":[{"ecode":"0300_0100"},{"ecode":"0C00_0300"}]}}`))
 	if !printerHasError(mqttMgr.GetStatus(ip)) {
 		t.Fatal("neue Stoerung waehrend des Drucks muss blinken")

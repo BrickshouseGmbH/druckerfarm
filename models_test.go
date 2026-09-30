@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-// Ein X1E meldet sich als "C13". Stand die Kennung ungeuebersetzt in der Liste,
+// An X1E reports itself as "C13". If the code was untranslated in the list,
 // wusste niemand, welches Geraet gemeint war.
 func TestModellName(t *testing.T) {
 	belegt := map[string]string{
@@ -19,8 +19,8 @@ func TestModellName(t *testing.T) {
 	}
 }
 
-// Was schon wie ein Modellname aussieht, bleibt unangetastet — neuere Firmware
-// meldet direkt den Namen.
+// Anything that already looks like a model name stays untouched — newer firmware
+// reports the name directly.
 func TestModellNameLaesstBekanntesStehen(t *testing.T) {
 	for _, x := range []string{"H2D", "X1C", "P1S", "A1"} {
 		if got := modellName(x); got != x {
@@ -29,8 +29,8 @@ func TestModellNameLaesstBekanntesStehen(t *testing.T) {
 	}
 }
 
-// Unbekannte Kennungen werden NICHT geraten. Lieber eine Kennung zum
-// Nachschlagen als ein falscher Name, dem man glaubt.
+// Unknown codes are NOT guessed. A code to look up is better
+// than a wrong name that is believed.
 func TestUnbekannteKennungBleibtStehen(t *testing.T) {
 	for _, x := range []string{"O1S", "X2D", "P2S", "ZZ99"} {
 		if got := modellName(x); got != x {

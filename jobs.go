@@ -12,17 +12,17 @@ import (
 	"time"
 )
 
-// ─── SUCH- UND LÖSCHVORGÄNGE ──────────────────────────────────────────────────
+// ─── SEARCH AND DELETE OPERATIONS ─────────────────────────────────────────────
 //
-// Beides läuft über viele Drucker und dauert. Statt einmal am Ende zu antworten,
-// wird ein Vorgang gestartet, dessen Zwischenstand die Oberfläche abfragt — so
-// erscheinen Treffer, sobald der jeweilige Drucker geantwortet hat, und ein
-// laufender Vorgang lässt sich abbrechen.
+// Both run across many printers and take time. Instead of replying once at the end,
+// an operation is started whose progress the UI polls — so
+// hits appear as soon as each printer has answered, and a
+// running operation can be cancelled.
 
 const (
 	jobParallel   = 6                // gleichzeitige FTP-Sitzungen
-	jobPerPrinter = 40 * time.Second // Zeitfenster je Drucker
-	jobKeepFor    = 10 * time.Minute // wie lange ein beendeter Vorgang abrufbar bleibt
+	jobPerPrinter = 40 * time.Second // time window per printer
+	jobKeepFor    = 10 * time.Minute // how long a finished operation stays retrievable
 )
 
 type sdSearchHit struct {
@@ -66,7 +66,7 @@ func newJob(kind, query string, total int) *job {
 	jobsMu.Lock()
 	defer jobsMu.Unlock()
 
-	// Abgelaufene Vorgänge aufräumen, damit die Sammlung nicht wächst
+	// Clean up expired operations so the collection does not grow
 	for id, j := range jobs {
 		j.mu.Lock()
 		expired := !j.running && !j.finished.IsZero() && time.Since(j.finished) > jobKeepFor
@@ -135,8 +135,8 @@ func (j *job) finish() {
 	j.mu.Unlock()
 }
 
-// snapshot liefert den Stand ab dem angegebenen Treffer — die Oberfläche holt
-// so nur das Neue und hängt es an, statt die Liste jedes Mal neu zu bauen.
+// snapshot returns the state from the given hit onward — the UI fetches
+// only the new part and appends it instead of rebuilding the list each time.
 func (j *job) snapshot(sinceHits, sinceFails int) map[string]any {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -266,7 +266,7 @@ func handleSearchStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": j.id, "total": len(targets)})
 }
 
-// ─── LÖSCHEN ──────────────────────────────────────────────────────────────────
+// ─── DELETE ───────────────────────────────────────────────────────────────────
 
 type deleteItem struct {
 	IP   string `json:"ip"`
@@ -346,7 +346,7 @@ func handleDeleteStart(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if _, ok := known[it.IP]; !ok {
-			continue // unbekannter Drucker — nicht blind löschen
+			continue // unknown printer — do not delete blindly
 		}
 		byPrinter[it.IP] = append(byPrinter[it.IP], it.File)
 	}
@@ -364,16 +364,16 @@ func handleDeleteStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": j.id, "total": n, "printers": len(byPrinter)})
 }
 
-// ─── Status und Abbruch ───────────────────────────────────────────────────────
+// ─── Status and cancel ────────────────────────────────────────────────────────
 
-// listJobs fasst alle laufenden und kuerzlich beendeten Vorgaenge zusammen —
-// die Registry-Jobs (Suche/Loeschen) plus den Datei-Sync als synthetischen
-// Eintrag. Damit kann die Oberflaeche ein gemeinsames "Auftraege"-Panel zeigen.
+// listJobs collects all running and recently finished operations —
+// the registry jobs (search/delete) plus the file sync as a synthetic
+// entry. This lets the UI show a common "jobs" panel.
 func listJobs() []map[string]any {
 	out := []map[string]any{}
 
-	// Datei-Sync laeuft ueber ein eigenes Zustandsobjekt, nicht ueber die
-	// Registry — hier als Auftrag mit aufgenommen, solange er aktiv ist.
+	// File sync runs via its own state object, not via the
+	// registry — included here as a job while it is active.
 	syncMu.Lock()
 	if syncProgress.Status == SyncRunning || syncProgress.Status == SyncPaused {
 		out = append(out, map[string]any{
@@ -402,7 +402,7 @@ func listJobs() []map[string]any {
 		if ra != rb {
 			return ra // laufende zuerst
 		}
-		return fa.After(fb) // dann die zuletzt beendeten
+		return fa.After(fb) // then the most recently finished
 	})
 
 	for _, j := range list {

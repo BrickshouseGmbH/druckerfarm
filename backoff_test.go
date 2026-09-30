@@ -31,15 +31,15 @@ func TestBackoffGrowsAndIsCapped(t *testing.T) {
 	}
 }
 
-// Der Kern des Problems: ein hängender Drucker darf nicht dauerhaft einen der
-// vier Transcode-Plätze belegen und die gesunden ausbremsen.
+// The core issue: a hanging printer must not permanently occupy one of the
+// four transcode slots and slow down the healthy ones.
 func TestFailingStreamStopsBeingAsked(t *testing.T) {
 	var calls int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/frame.jpeg" {
 			atomic.AddInt64(&calls, 1)
 		}
-		w.WriteHeader(http.StatusOK) // 200 mit leerem Rumpf = kein Frame
+		w.WriteHeader(http.StatusOK) // 200 with empty body = no frame
 	}))
 	defer srv.Close()
 
@@ -51,7 +51,7 @@ func TestFailingStreamStopsBeingAsked(t *testing.T) {
 	resetSnapState()
 	setPrinters(Printer{Name: "kaputt", IP: "10.0.0.1"})
 
-	// Erster Versuch schlägt fehl und setzt die Pause
+	// First attempt fails and sets the pause
 	rec := httptest.NewRecorder()
 	handleSnapshot(rec, httptest.NewRequest("GET", "/api/snapshot/10.0.0.1?max_age=1", nil))
 	if rec.Code != http.StatusServiceUnavailable {
@@ -64,7 +64,7 @@ func TestFailingStreamStopsBeingAsked(t *testing.T) {
 		t.Fatal("the UI needs to know how long the stream is paused")
 	}
 
-	// Weitere Anfragen dürfen go2rtc nicht mehr belasten
+	// Further requests must not burden go2rtc anymore
 	for i := 0; i < 20; i++ {
 		r2 := httptest.NewRecorder()
 		handleSnapshot(r2, httptest.NewRequest("GET", "/api/snapshot/10.0.0.1?max_age=1", nil))
@@ -77,13 +77,13 @@ func TestFailingStreamStopsBeingAsked(t *testing.T) {
 	}
 }
 
-// Ein gesunder Drucker darf durch einen kaputten nicht ausgebremst werden.
+// A healthy printer must not be slowed by a broken one.
 func TestHealthyStreamIsNotBlockedByABrokenOne(t *testing.T) {
 	var slowCalls, fastCalls int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Query().Get("src"), "kaputt") {
 			atomic.AddInt64(&slowCalls, 1)
-			time.Sleep(300 * time.Millisecond) // hängt
+			time.Sleep(300 * time.Millisecond) // hangs
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -105,7 +105,7 @@ func TestHealthyStreamIsNotBlockedByABrokenOne(t *testing.T) {
 	ps = append(ps, Printer{Name: "gut", IP: "10.0.1.1"})
 	setPrinters(ps...)
 
-	// Erst die kaputten anstoßen, damit sie in die Pause gehen
+	// Trigger the broken ones first so they go into the pause
 	for i := 1; i <= 8; i++ {
 		rec := httptest.NewRecorder()
 		handleSnapshot(rec, httptest.NewRequest("GET", fmt.Sprintf("/api/snapshot/10.0.0.%d?max_age=1", i), nil))
@@ -125,7 +125,7 @@ func TestHealthyStreamIsNotBlockedByABrokenOne(t *testing.T) {
 	t.Logf("gesunder Drucker nach %v bedient, %d Anfragen an kaputte Streams", took, atomic.LoadInt64(&slowCalls))
 }
 
-// Nach einem erfolgreichen Abruf muss die Sperre verschwinden.
+// After a successful fetch the lock must disappear.
 func TestRecoveryClearsThePause(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)
@@ -152,7 +152,7 @@ func TestRecoveryClearsThePause(t *testing.T) {
 		t.Fatalf("want 503, got %d", rec.Code)
 	}
 
-	// Pause von Hand aufheben, so als wäre sie abgelaufen, und Drucker heilen
+	// Lift the pause by hand, as if expired, and heal the printer
 	fail.Store(false)
 	e := snapEntryFor(streamName(Printer{Name: "wackelig", IP: "10.0.0.1"}))
 	e.mu.Lock()

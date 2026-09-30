@@ -18,19 +18,30 @@ import (
 
 // ─── SELBSTAKTUALISIERUNG ─────────────────────────────────────────────────────
 //
-// Die Version wird beim Bauen eingestempelt:
+// The version is stamped in at build time:
 //   go build -ldflags "-X main.appVersion=1.4.0" ...
 //
-// Bezugsquelle sind GitHub-Releases. Das Repository steht in der Konfiguration
-// und laesst sich in den Einstellungen setzen, damit kein neuer Build noetig ist.
+// The source is GitHub releases. The repository is in the configuration
+// and can be set in the settings, so no new build is needed.
 //
-// Zum Ersetzen: Windows verbietet das Ueberschreiben einer laufenden Datei,
-// erlaubt aber das Umbenennen. Deshalb benennt sich die App selbst in
-// *.old.exe um, schreibt die neue Fassung an den frei gewordenen Pfad, startet
-// sie und beendet sich. Beim naechsten Start verschwindet die alte Datei — bis
-// dahin ist sie der Rueckweg.
+// To replace: Windows forbids overwriting a running file,
+// but allows renaming. So the app renames itself to
+// *.old.exe, writes the new build to the freed path, starts
+// it and exits. On the next start the old file disappears — until
+// then it is the way back.
 
 var appVersion = "dev"
+
+// buildID identifies the concrete build. It is stamped in automatically at
+// build time from the compile timestamp:
+//
+//	go build -ldflags "-X main.buildID=2026-09-28-153501" ...
+//
+// Format YYYY-MM-DD-HHMMSS — always unique and monotonic, no manual bumping
+// and no A/B/C suffixes. Shown in the UI under the version and logged at
+// startup so one immediately sees which build is running. "dev" means the
+// build was produced without the stamp (e.g. a bare `go build`).
+var buildID = "dev"
 
 type updateInfo struct {
 	Current   string `json:"current"`
@@ -68,8 +79,8 @@ func setUpdProgress(fn func(*updateProgress)) {
 
 var versionPart = regexp.MustCompile(`\d+`)
 
-// parseVersion macht aus "v1.12.3-beta" die Zahlenfolge [1 12 3]. Vergleich
-// erfolgt zahlenweise, damit 1.12 groesser ist als 1.9 (als Text waere es das nicht).
+// parseVersion turns "v1.12.3-beta" into the number sequence [1 12 3]. Comparison
+// is done number-wise so 1.12 is greater than 1.9 (as text it would not be).
 func parseVersion(s string) []int {
 	s = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "v"))
 	if i := strings.IndexAny(s, "-+ "); i > 0 {
@@ -86,14 +97,14 @@ func parseVersion(s string) []int {
 	return out
 }
 
-// newerVersion sagt, ob b neuer ist als a.
+// newerVersion reports whether b is newer than a.
 func newerVersion(a, b string) bool {
 	va, vb := parseVersion(a), parseVersion(b)
 	if len(vb) == 0 {
 		return false
 	}
 	if len(va) == 0 {
-		return true // laufende Fassung ohne Versionsstempel ("dev")
+		return true // running build without a version stamp ("dev")
 	}
 	for i := 0; i < len(va) || i < len(vb); i++ {
 		x, y := 0, 0
@@ -128,9 +139,9 @@ type ghRelease struct {
 	Assets      []ghAsset `json:"assets"`
 }
 
-// defaultUpdateRepo ist die Bezugsquelle fuer Programm-Updates, wenn der Anwender
-// nichts eigenes hinterlegt hat. So funktioniert die Update-Suche ohne
-// Einrichtung; ueber die Einstellungen laesst sie sich weiterhin ueberschreiben.
+// defaultUpdateRepo is the source for program updates when the user
+// has set nothing of their own. This makes the update check work without
+// setup; it can still be overridden via the settings.
 const defaultUpdateRepo = "BrickshouseGmbH/druckerfarm"
 
 func updateRepo() (repo, token string) {
@@ -143,10 +154,10 @@ func updateRepo() (repo, token string) {
 	return repo, strings.TrimSpace(state.UpdateToken)
 }
 
-// pickAsset waehlt die Programmdatei aus den Release-Anhaengen. Bewusst
-// unabhaengig vom System, auf dem der Code gerade laeuft: veroeffentlicht wird
-// eine Windows-Datei, und danach wird gesucht — sonst faende ein Testlauf unter
-// Linux die .exe nicht.
+// pickAsset selects the program file from the release assets. Deliberately
+// independent of the system the code currently runs on: a Windows file is
+// published, and that is searched for — otherwise a test run under
+// Linux would not find the .exe.
 func pickAsset(assets []ghAsset) *ghAsset {
 	for i := range assets {
 		if strings.HasSuffix(strings.ToLower(assets[i].Name), ".exe") {
@@ -222,7 +233,7 @@ func checkUpdate() (updateInfo, error) {
 	return info, nil
 }
 
-// ─── Herunterladen und ersetzen ───────────────────────────────────────────────
+// ─── Download and replace ─────────────────────────────────────────────────────
 
 func downloadUpdate(url, dest string) error {
 	repo, token := updateRepo()
@@ -282,8 +293,8 @@ func downloadUpdate(url, dest string) error {
 	return nil
 }
 
-// looksExecutable prueft, ob die geladene Datei plausibel ist. Ohne diese
-// Pruefung wuerde eine HTML-Fehlerseite als Programmdatei an den Platz der
+// looksExecutable checks whether the downloaded file is plausible. Without this
+// check an HTML error page would be written as the program file in place of the
 // laufenden App wandern.
 func looksExecutable(path string) error {
 	st, err := os.Stat(path)
@@ -303,7 +314,7 @@ func looksExecutable(path string) error {
 		return err
 	}
 	// "MZ" steht am Anfang jeder Windows-Programmdatei. Ohne diese Pruefung
-	// koennte eine HTML-Fehlerseite passender Groesse durchrutschen.
+	// an HTML error page of matching size could slip through.
 	if string(head) != "MZ" {
 		return fmt.Errorf("keine Windows-Programmdatei (Kennung %q)", string(head))
 	}
@@ -312,7 +323,7 @@ func looksExecutable(path string) error {
 
 func oldExePath() string { return exePath + ".old" }
 
-// cleanupOldExe raeumt die Vorgaengerversion nach einem geglueckten Start weg.
+// cleanupOldExe removes the previous version after a successful start.
 func cleanupOldExe() {
 	if exePath == "" {
 		return
@@ -322,17 +333,17 @@ func cleanupOldExe() {
 	}
 }
 
-// applyUpdate ersetzt die laufende Programmdatei und startet sie neu.
+// applyUpdate replaces the running program file and restarts it.
 func applyUpdate(newFile string) error {
 	if exePath == "" {
 		return fmt.Errorf("eigener Programmpfad unbekannt")
 	}
 	setUpdProgress(func(p *updateProgress) { p.Step = "replace" })
 
-	// Reste eines frueheren Updates wegraeumen, sonst schlaegt das Umbenennen fehl
+	// Clear leftovers of an earlier update, otherwise the rename fails
 	os.Remove(oldExePath())
 
-	// Umbenennen der laufenden Datei ist erlaubt, Ueberschreiben nicht
+	// Renaming the running file is allowed, overwriting is not
 	if err := os.Rename(exePath, oldExePath()); err != nil {
 		return fmt.Errorf("konnte laufende Datei nicht beiseitelegen: %v", err)
 	}
@@ -378,7 +389,7 @@ func runUpdate(info updateInfo) {
 	})
 	log.Printf("Update auf %s eingespielt, starte neu", info.Latest)
 
-	// Der Nachfolger laeuft bereits — hier ordentlich beenden.
+	// The successor is already running — exit cleanly here.
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
 		stopGo2rtc()

@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// Die Liste der geprueften Formen muss beide Schemata und beide Pfade abdecken —
-// und den Zugangscode enthalten, sonst weist der Drucker ab.
+// The list of tested forms must cover both schemes and both paths —
+// and contain the access code, otherwise the printer rejects it.
 func TestKameraKandidaten(t *testing.T) {
-	k := kameraKandidaten(Printer{IP: "10.0.0.9", Code: "geheim"})
+	k := cameraCandidates(Printer{IP: "10.0.0.9", Code: "geheim"})
 	if len(k) != 4 {
 		t.Fatalf("erwartet 4 Formen, bekommen %d", len(k))
 	}
@@ -35,8 +35,8 @@ func TestKameraKandidaten(t *testing.T) {
 	}
 }
 
-// probiereAdresse muss den Inhalt pruefen, nicht den Statuscode: go2rtc
-// antwortet auch mit 200, wenn es kein Bild bekommen hat. Genau dieser Fall hat
+// probiereAdresse must check the content, not the status code: go2rtc
+// answers with 200 even when it got no image. Exactly this case
 // uns frueher wochenlang Erfolg vorgegaukelt.
 func TestProbiereAdressePrueftInhalt(t *testing.T) {
 	jpeg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, make([]byte, 500)...)
@@ -76,8 +76,8 @@ func TestProbiereAdressePrueftInhalt(t *testing.T) {
 	}
 }
 
-// Wurde eine Form am Geraet gemessen, muss die Konfiguration sie zuerst nehmen —
-// unabhaengig davon, was der Modellname vermuten laesst.
+// If a form was measured on the device, the configuration must take it first —
+// regardless of what the model name suggests.
 func TestGemessenesSchemaSchlaegtModellname(t *testing.T) {
 	mu.Lock()
 	altSchema := state.KameraSchema
@@ -85,8 +85,8 @@ func TestGemessenesSchemaSchlaegtModellname(t *testing.T) {
 	mu.Unlock()
 	defer func() { mu.Lock(); state.KameraSchema = altSchema; mu.Unlock() }()
 
-	// H2D wuerde sonst rtsps zuerst bekommen
-	q := kameraQuellen(Printer{IP: "10.0.0.7", Code: "c", Model: "H2D"}, map[string]string{"10.0.0.7": "rtspx|/streaming/live/0"})
+	// H2D would otherwise get rtsps first
+	q := cameraSources(Printer{IP: "10.0.0.7", Code: "c", Model: "H2D"}, map[string]string{"10.0.0.7": "rtspx|/streaming/live/0"})
 	if !strings.HasPrefix(q[0], "rtspx://") || !strings.HasSuffix(q[0], "/streaming/live/0") {
 		t.Fatalf("gemessene Form nicht zuerst: %s", q[0])
 	}
@@ -103,9 +103,9 @@ func TestGemessenesSchemaSchlaegtModellname(t *testing.T) {
 	}
 }
 
-// Der Deadlock aus der ersten Fassung: writeGo2rtcYaml haelt die Sperre und
-// buildYaml griff erneut darauf zu. Der Test haette ewig gewartet — deshalb mit
-// eigener Frist, damit ein Rueckfall als Fehlschlag endet und nicht als Haenger.
+// The deadlock from the first version: writeGo2rtcYaml holds the lock and
+// buildYaml accessed it again. The test would have waited forever — so with
+// its own deadline, so a regression ends as a failure and not a hang.
 func TestBuildYamlSperrtNichtDoppelt(t *testing.T) {
 	fertig := make(chan string, 1)
 	go func() {

@@ -33,8 +33,8 @@ const plainResponse = "HTTP/1.1 200 OK\r\n" +
 	"DevBind: occupied\r\n" +
 	"DevVersion: 01.07.00.00\r\n\r\n"
 
-// Firmware-Varianten haengen ein Suffix an die Feldnamen — beide Formen muessen
-// gelesen werden.
+// Firmware variants append a suffix to the field names — both forms must
+// be read.
 func TestParseResponseWithSuffixedHeaders(t *testing.T) {
 	d, ok := parseSSDPResponse([]byte(realResponse), "192.168.189.85")
 	if !ok {

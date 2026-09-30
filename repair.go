@@ -12,12 +12,12 @@ import (
 
 // ─── REPARATUR-FLAG AUF DER DRUCKER-SD ────────────────────────────────────────
 //
-// Ein Drucker kann als "in Reparatur" markiert werden. Damit alle PCs dieselbe
-// Markierung sehen, liegt sie als Datei "maintenance.json" auf der SD-Karte des
-// jeweiligen Druckers. Zusaetzlich wird sie lokal zwischengespeichert (config),
-// damit die Anzeige sofort da ist und einen Offline-Drucker ueberdauert.
+// A printer can be marked "in repair". So all PCs see the same
+// marker, it is stored as "maintenance.json" on the SD card of the
+// respective printer. It is also cached locally (config),
+// so the display is immediate and survives an offline printer.
 
-const maintenanceDatei = "maintenance.json"
+const maintenanceFile = "maintenance.json"
 
 type RepairFlag struct {
 	InRepair bool      `json:"in_repair"`
@@ -29,9 +29,9 @@ type RepairFlag struct {
 func maintenancePfad() string {
 	base := strings.TrimRight(strings.TrimSpace(syncCfg.SDPath), "/")
 	if base == "" {
-		return "/" + maintenanceDatei
+		return "/" + maintenanceFile
 	}
-	return base + "/" + maintenanceDatei
+	return base + "/" + maintenanceFile
 }
 
 func repairCache(ip string) (RepairFlag, bool) {
@@ -54,16 +54,16 @@ func setRepairCache(ip string, f RepairFlag) {
 	saveState()
 }
 
-// schreibeReparaturSD legt die Markierung auf der SD des Druckers ab.
-func schreibeReparaturSD(p Printer, f RepairFlag) error {
+// writeRepairSD stores the marker on the printer's SD card.
+func writeRepairSD(p Printer, f RepairFlag) error {
 	fc := &printerFTP{ip: p.IP, code: p.Code}
 	data, _ := json.MarshalIndent(f, "", "  ")
 	return fc.stor(maintenancePfad(), bytes.NewReader(data))
 }
 
-// leseReparaturSD holt die Markierung von der SD (fehlt sie, gilt „nicht in
+// readRepairSD reads the marker from the SD (if missing, counts as "not in
 // Reparatur").
-func leseReparaturSD(p Printer) (RepairFlag, bool) {
+func readRepairSD(p Printer) (RepairFlag, bool) {
 	fc := &printerFTP{ip: p.IP, code: p.Code}
 	rc, err := fc.retr(maintenancePfad())
 	if err != nil {
@@ -78,39 +78,39 @@ func leseReparaturSD(p Printer) (RepairFlag, bool) {
 	return f, true
 }
 
-// syncReparatur gleicht lokalen Stand und SD ab (nur bei erreichbarem Drucker).
-// Neuere Markierung (nach Zeitstempel) gewinnt.
-func syncReparatur(p Printer) {
+// syncRepair reconciles local state and SD (only for a reachable printer).
+// The newer marker (by timestamp) wins.
+func syncRepair(p Printer) {
 	if s := mqttMgr.GetStatus(p.IP); s == nil || !s.Online {
 		return
 	}
-	sd, sdDa := leseReparaturSD(p)
+	sd, sdDa := readRepairSD(p)
 	lokal, lokalDa := repairCache(p.IP)
 
 	switch {
 	case sdDa && (!lokalDa || sd.Since.After(lokal.Since)):
 		setRepairCache(p.IP, sd) // anderer PC war neuer -> uebernehmen
 	case lokalDa && (!sdDa || lokal.Since.After(sd.Since)):
-		schreibeReparaturSD(p, lokal) // eigener Stand neuer -> auf SD schreiben
+		writeRepairSD(p, lokal) // our state is newer -> write to SD
 	}
 }
 
-// reparaturLoop liest die Markierungen der erreichbaren Drucker in Abstaenden,
-// damit Aenderungen von anderen PCs ankommen. Bewusst langsam/gestaffelt.
-func reparaturLoop() {
+// repairLoop reads the markers of reachable printers at intervals,
+// so changes from other PCs arrive. Deliberately slow/staggered.
+func repairLoop() {
 	time.Sleep(15 * time.Second)
 	for {
 		mu.Lock()
 		printers := append([]Printer(nil), state.Printers...)
 		mu.Unlock()
 		for _, p := range printers {
-			if netzPausiert() {
+			if netPaused() {
 				break
 			}
 			if strings.TrimSpace(p.Serial) == "" || strings.TrimSpace(p.Code) == "" {
 				continue
 			}
-			syncReparatur(p)
+			syncRepair(p)
 			time.Sleep(4 * time.Second) // staffeln, um FTP-Last gering zu halten
 		}
 		time.Sleep(3 * time.Minute)
@@ -146,14 +146,14 @@ func handleRepair(w http.ResponseWriter, r *http.Request) {
 	}
 
 	flag := RepairFlag{InRepair: body.InRepair, Note: strings.TrimSpace(body.Note), By: eigenerName, Since: time.Now()}
-	setRepairCache(body.IP, flag) // lokal sofort, damit die Anzeige stimmt
+	setRepairCache(body.IP, flag) // locally at once so the display is correct
 
-	// Auf die SD schreiben, wenn erreichbar. Ist der Drucker offline (typisch bei
-	// Reparatur), bleibt es lokal und wird beim naechsten Online-Abgleich auf die
+	// Write to the SD when reachable. If the printer is offline (typical during
+	// repair), it stays local and is written to the SD at the next online sync.
 	// SD nachgezogen.
 	sdOK := true
 	if s := mqttMgr.GetStatus(body.IP); s != nil && s.Online {
-		if err := schreibeReparaturSD(*ziel, flag); err != nil {
+		if err := writeRepairSD(*ziel, flag); err != nil {
 			sdOK = false
 			log.Printf("Reparatur-Flag %s: SD-Schreiben fehlgeschlagen: %v", body.IP, err)
 		}

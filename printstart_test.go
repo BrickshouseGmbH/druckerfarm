@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// Die Nachricht muss genau die Form haben, die das Protokoll verlangt —
-// sonst passiert dasselbe wie bei pause: der Drucker nimmt sie und tut nichts.
+// The message must have exactly the shape the protocol requires —
+// otherwise the same as with pause: the printer accepts it and does nothing.
 func TestProjectFilePayloadForm(t *testing.T) {
 	p, err := projectFilePayload(printStartReq{IP: "10.0.0.1", Datei: "teil.3mf", UseAMS: true, Fach: 2}, "9001")
 	if err != nil {
@@ -31,7 +31,7 @@ func TestProjectFilePayloadForm(t *testing.T) {
 	if w.Print["command"] != "project_file" {
 		t.Fatalf("falscher Befehl: %v", w.Print["command"])
 	}
-	// Fuer oertliche Auftraege sind die Kennungen laut Protokoll "0".
+	// For local jobs the ids are "0" per protocol.
 	for _, feld := range []string{"project_id", "profile_id", "task_id", "subtask_id"} {
 		if w.Print[feld] != "0" {
 			t.Fatalf("%s muss \"0\" sein, ist %v", feld, w.Print[feld])
@@ -42,8 +42,8 @@ func TestProjectFilePayloadForm(t *testing.T) {
 	}
 }
 
-// Die Farbzuordnung wird von hinten gefuellt — bei einer Farbe steht das Fach
-// ganz am Ende. Steht es vorn, faengt der Drucker gar nicht erst an.
+// The color mapping is filled from the back — for one color the tray is
+// at the very end. If it is in front, the printer does not even start.
 func TestAmsMappingVonHinten(t *testing.T) {
 	cases := map[int]string{
 		0:  "[-1,-1,-1,-1,0]",
@@ -57,7 +57,7 @@ func TestAmsMappingVonHinten(t *testing.T) {
 	}
 }
 
-// Ohne AMS darf keine Zuordnung mitgeschickt werden.
+// Without AMS no mapping may be sent.
 func TestOhneAmsKeineZuordnung(t *testing.T) {
 	p, err := projectFilePayload(printStartReq{Datei: "a.3mf", UseAMS: false}, "9002")
 	if err != nil {
@@ -71,8 +71,8 @@ func TestOhneAmsKeineZuordnung(t *testing.T) {
 	}
 }
 
-// Dateinamen aus der Liste, nicht aus der Fantasie: Pfadtrenner und
-// Rueckwaertsschritte werden abgewiesen, bevor irgendetwas gesendet wird.
+// File names from the list, not from imagination: path separators and
+// backtracking are rejected before anything is sent.
 func TestPrintStartWeistUnsinnAb(t *testing.T) {
 	schlecht := []string{"", "   ", "../etc/passwd", "ordner/teil.3mf", `ordner\teil.3mf`,
 		"teil.txt", "teil.stl"}
@@ -88,9 +88,9 @@ func TestPrintStartWeistUnsinnAb(t *testing.T) {
 	}
 }
 
-// Der Fehler 0x07FF8012 kam daher, dass eine rohe .gcode-Datei mit dem
-// project_file-Befehl und dem 3mf-internen Pfad gestartet wurde. Fuer .gcode
-// muss es gcode_file mit dem Dateinamen sein.
+// Error 0x07FF8012 came from starting a raw .gcode file with the
+// project_file command and the 3mf-internal path. For .gcode
+// it must be gcode_file with the file name.
 func TestGcodeNutztGcodeFile(t *testing.T) {
 	p, err := projectFilePayload(printStartReq{Datei: "modell.gcode"}, "9001")
 	if err != nil {
@@ -113,7 +113,7 @@ func TestGcodeNutztGcodeFile(t *testing.T) {
 	}
 }
 
-// Eine .3mf bleibt beim project_file-Befehl.
+// A .3mf stays with the project_file command.
 func Test3mfNutztProjectFile(t *testing.T) {
 	p, _ := projectFilePayload(printStartReq{Datei: "teil.3mf"}, "9002")
 	var w struct {
@@ -128,8 +128,8 @@ func Test3mfNutztProjectFile(t *testing.T) {
 	}
 }
 
-// Mehrfarbige Zuordnung: die Farben werden der Reihe nach den Faechern
-// zugeordnet, "nicht zuordnen" wird zu -1.
+// Multi-color mapping: the colors are mapped to the trays in order,
+// "do not map" becomes -1.
 func TestMehrfarbZuordnung(t *testing.T) {
 	p, err := projectFilePayload(printStartReq{Datei: "bunt.3mf", Mapping: []int{4, -1, 6}}, "9010")
 	if err != nil {

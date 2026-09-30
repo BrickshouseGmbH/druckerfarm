@@ -10,43 +10,43 @@ import (
 
 // ─── DRUCKER-FIRMWARE-UPDATES ─────────────────────────────────────────────────
 //
-// Woher der Drucker weiss, dass es ein Update gibt: "Nur LAN" trennt die
-// Cloud-Bindung (Konto, Fernsteuerung), nicht das Netzwerk. Der Drucker prueft
-// weiterhin ueber einen eigenen Kanal beim Hersteller, ob neue Firmware
-// vorliegt, und legt das Ergebnis in seinen Statusbericht (upgrade_state /
-// new_ver_list). Dieses Programm liest das nur mit — es loest KEIN Update aus.
+// How the printer knows an update exists: "LAN only" cuts the
+// cloud binding (account, remote control), not the network. The printer keeps
+// checking with the vendor over its own channel whether new firmware
+// is available, and puts the result into its status report (upgrade_state /
+// new_ver_list). This program only reads it — it triggers NO update.
 //
-// Gefundene Updates werden lokal gemerkt und bleiben als Marke hinter dem
-// Druckernamen stehen, bis der Drucker die neue Fassung tatsaechlich
-// installiert hat. Das Aufraeumen geschieht beim naechsten Statusabruf: meldet
-// der Drucker die Baugruppe nicht mehr oder laeuft sie bereits auf der neuen
-// Nummer, verschwindet die Marke.
+// Found updates are remembered locally and stay as a badge after the
+// printer name until the printer has actually
+// installed the new build. Cleanup happens at the next status poll: if
+// the printer no longer reports the module or it already runs the new
+// number, the badge disappears.
 
-// UpgradeMeldung ist ein einzelnes offenes Update, wie es aus dem Status kommt.
-type UpgradeMeldung struct {
+// UpgradeMessage is a single open update as it comes from the status.
+type UpgradeMessage struct {
 	Modul   string `json:"modul"`   // "ota", "ams/0" …
-	Aktuell string `json:"aktuell"` // laufende Fassung
-	Neu     string `json:"neu"`     // verfuegbare Fassung
+	Aktuell string `json:"aktuell"` // running build
+	Neu     string `json:"neu"`     // available build
 }
 
-// FwModulUpdate ist ein gemerktes Update samt Fundzeitpunkt.
-type FwModulUpdate struct {
+// FwModuleUpdate is a remembered update with the time it was found.
+type FwModuleUpdate struct {
 	Modul    string    `json:"modul"`
 	Aktuell  string    `json:"aktuell"`
 	Neu      string    `json:"neu"`
 	Gefunden time.Time `json:"gefunden"`
 }
 
-// parseUpgradeState liest den upgrade_state-Block aus dem pushall.
-func parseUpgradeState(v interface{}) []UpgradeMeldung {
+// parseUpgradeState reads the upgrade_state block from the pushall.
+func parseUpgradeState(v interface{}) []UpgradeMessage {
 	m, ok := v.(map[string]interface{})
 	if !ok {
 		return nil
 	}
-	var out []UpgradeMeldung
+	var out []UpgradeMessage
 
-	// Weg 1 — die ausfuehrliche Liste (neuere Firmware, P1/A1/H2 …). Sie nennt
-	// je Baugruppe die laufende und die neue Nummer.
+	// Path 1 — the detailed list (newer firmware, P1/A1/H2 …). It names
+	// the current and new number per module.
 	if lst, ok := m["new_ver_list"].([]interface{}); ok {
 		for _, e := range lst {
 			em, ok := e.(map[string]interface{})
@@ -61,35 +61,35 @@ func parseUpgradeState(v interface{}) []UpgradeMeldung {
 			if name == "" || neu == "" {
 				continue
 			}
-			// Nur echte Spruenge nach oben. Manche Firmware listet die
-			// laufende Fassung auch dann, wenn nichts offen ist.
+			// Only real upward jumps. Some firmware lists the
+			// current build even when nothing is pending.
 			if cur != "" && !newerVersion(cur, neu) {
 				continue
 			}
-			out = append(out, UpgradeMeldung{Modul: name, Aktuell: cur, Neu: neu})
+			out = append(out, UpgradeMessage{Modul: name, Aktuell: cur, Neu: neu})
 		}
 	}
 	if len(out) > 0 {
 		return out
 	}
 
-	// Weg 2 — die X1-Reihe (auch X1E) kennt keine new_ver_list, sondern legt je
-	// Baugruppe ein Einzelfeld an: ota_new_version_number, ams_new_version_number,
+	// Path 2 — the X1 series (also X1E) has no new_ver_list but adds a
+	// single field per module: ota_new_version_number, ams_new_version_number,
 	// ahb_new_version_number, ext_new_version_number.
 	//
 	// Wichtig: new_version_state taugt NICHT als Schalter. Ein echter X1E meldet
 	// new_version_state=1 UND trotzdem ota_new_version_number="01.03.00.00" — da
-	// liegt ein Update vor. Maszgeblich ist allein: ist das Nummernfeld gefuellt
-	// (und kein Platzhalter). Die laufende Fassung steht hier nicht dabei;
-	// verglichen wird spaeter gegen get_version (nochOffen), damit bereits
-	// Installiertes wieder verschwindet.
+	// an update exists. The only thing that matters: is the number field filled
+	// (and not a placeholder). The current build is not included here;
+	// it is compared later against get_version (nochOffen) so already
+	// installed items disappear again.
 	feld := func(key, modul string) {
 		val, _ := m[key].(string)
 		val = strings.TrimSpace(val)
 		if val == "" || istNullVersion(val) {
 			return
 		}
-		out = append(out, UpgradeMeldung{Modul: modul, Neu: val})
+		out = append(out, UpgradeMessage{Modul: modul, Neu: val})
 	}
 	feld("ota_new_version_number", "ota")
 	feld("ams_new_version_number", "ams")
@@ -108,7 +108,7 @@ func istNullVersion(v string) bool {
 	return true
 }
 
-// aktuelleVersionen liefert die laufenden Baugruppen-Staende aus get_version.
+// aktuelleVersionen returns the current module levels from get_version.
 func aktuelleVersionen(st *PrinterStatus) map[string]string {
 	m := map[string]string{}
 	if st == nil || st.Info == nil {
@@ -119,9 +119,9 @@ func aktuelleVersionen(st *PrinterStatus) map[string]string {
 	}
 	for _, a := range st.Info.AMS {
 		m[strings.ToLower(a.Name)] = a.SW
-		// Fuer die X1-Meldung "ams_new_version_number" ohne Index: der
-		// niedrigste AMS-Stand entscheidet. Liegt irgendein AMS unter der
-		// neuen Nummer, gilt das Update als offen.
+		// For the X1 message "ams_new_version_number" without index: the
+		// lowest AMS level decides. If any AMS is below the
+		// new number, the update counts as open.
 		if cur, ok := m["ams"]; !ok || (a.SW != "" && newerVersion(a.SW, cur)) {
 			m["ams"] = a.SW
 		}
@@ -129,18 +129,18 @@ func aktuelleVersionen(st *PrinterStatus) map[string]string {
 	return m
 }
 
-// nochOffen streicht aus einer Update-Liste alles, was auf dem Drucker bereits
-// installiert ist. Ist der Status unbekannt (offline), bleibt die Liste stehen.
-func nochOffen(list []FwModulUpdate, st *PrinterStatus) []FwModulUpdate {
+// nochOffen removes from an update list everything already
+// installed on the printer. If the status is unknown (offline), the list stays.
+func nochOffen(list []FwModuleUpdate, st *PrinterStatus) []FwModuleUpdate {
 	if st == nil {
 		return list
 	}
 	aktuell := aktuelleVersionen(st)
-	out := []FwModulUpdate{}
+	out := []FwModuleUpdate{}
 	for _, u := range list {
 		cur := aktuell[strings.ToLower(u.Modul)]
 		if cur == "" {
-			cur = u.Aktuell // notfalls die Fassung vom Fund
+			cur = u.Aktuell // fall back to the build seen at discovery
 		}
 		if newerVersion(cur, u.Neu) {
 			out = append(out, u)
@@ -149,13 +149,13 @@ func nochOffen(list []FwModulUpdate, st *PrinterStatus) []FwModulUpdate {
 	return out
 }
 
-// fwAnzeige liefert je Drucker die offenen Updates fuer die Anzeige und raeumt
-// dabei still installierte weg (persistiert nur, wenn sich etwas geaendert hat).
-// Aufgerufen bei jedem Statusabruf — das ist das "beim Laden vergleichen".
-func fwAnzeige() map[string][]FwModulUpdate {
+// fwForDisplay returns the open updates per printer for display and clears
+// installed ones silently (persists only when something changed).
+// Called at every status poll — this is the "compare on load".
+func fwForDisplay() map[string][]FwModuleUpdate {
 	mu.Lock()
 	defer mu.Unlock()
-	res := map[string][]FwModulUpdate{}
+	res := map[string][]FwModuleUpdate{}
 	if state.FwUpdates == nil {
 		return res
 	}
@@ -164,7 +164,7 @@ func fwAnzeige() map[string][]FwModulUpdate {
 		st := mqttMgr.GetStatus(ip)
 		offen := nochOffen(list, st)
 		if st != nil && st.Online && len(offen) != len(list) {
-			// Der Drucker hat (mindestens) eines der Updates installiert.
+			// The printer installed (at least) one of the updates.
 			if len(offen) == 0 {
 				delete(state.FwUpdates, ip)
 			} else {
@@ -182,8 +182,8 @@ func fwAnzeige() map[string][]FwModulUpdate {
 	return res
 }
 
-// handleFwUpdateScan fragt jeden verbundenen Drucker frisch ab (pushall) und
-// merkt sich, welche Baugruppe ein Update offen hat. Loest NICHTS aus.
+// handleFwUpdateScan freshly polls every connected printer (pushall) and
+// remembers which module has an update pending. Triggers NOTHING.
 func handleFwUpdateScan(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -192,22 +192,22 @@ func handleFwUpdateScan(w http.ResponseWriter, r *http.Request) {
 
 	angefragt := 0
 	for _, p := range printers {
-		// pushall bringt upgrade_state, get_version die laufende Firmware —
-		// nur mit beiden laesst sich sauber vergleichen, was schon installiert
-		// ist. get_version braucht die Seriennummer.
+		// pushall brings upgrade_state, get_version the current firmware —
+		// only with both can it cleanly compare what is already installed.
+		// get_version needs the serial number.
 		ok := mqttMgr.RequestStatus(p)
 		mqttMgr.RequestVersion(p)
 		if ok {
 			angefragt++
 		}
 	}
-	// Kurz warten, bis die Antworten eingetroffen sind.
+	// Wait briefly until the responses have arrived.
 	time.Sleep(2500 * time.Millisecond)
 
 	geprueft, mitUpdate := scanMergeFw(printers)
 	saveState()
 
-	// Rohe upgrade_state-Meldungen mitgeben — zur Diagnose, falls ein Modell
+	// Include raw upgrade_state messages — for diagnostics, in case a model
 	// seine Update-Info anders aufbaut als erwartet.
 	roh := map[string]string{}
 	mqttMgr.mu.RLock()
@@ -228,10 +228,10 @@ func handleFwUpdateScan(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleFwUpdateStart stoesst am Drucker das Firmware-Update an. WICHTIG: Das
-// ist bewusst risikobehaftet und nicht offiziell dokumentiert — es funktioniert
-// nur bei aktiviertem Developer Mode und ist Best-Effort. Die Oberflaeche warnt
-// vorher deutlich; hier wird nur der Befehl abgesetzt.
+// handleFwUpdateStart triggers the firmware update on the printer. IMPORTANT: This
+// is deliberately risky and not officially documented — it works
+// only with Developer Mode enabled and is best-effort. The UI warns
+// clearly beforehand; here only the command is issued.
 func handleFwUpdateStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST erwartet", http.StatusMethodNotAllowed)
@@ -258,9 +258,9 @@ func handleFwUpdateStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Bekannteste Form aus der Gemeinschaft: das anstehende Update bestaetigen.
-	// Kein Modul/keine URL — der Drucker kennt das verfuegbare Update selbst.
-	payload := `{"upgrade":{"sequence_id":"` + naechsteSeq() + `","command":"upgrade_confirm","src_id":1}}`
+	// Best-known form from the community: confirm the pending update.
+	// No module/URL — the printer knows the available update itself.
+	payload := `{"upgrade":{"sequence_id":"` + nextSeq() + `","command":"upgrade_confirm","src_id":1}}`
 	if err := mqttMgr.PublishRaw(*ziel, payload); err != nil {
 		log.Printf("FW-UPDATE-START %s fehlgeschlagen: %v", body.IP, err)
 		w.WriteHeader(http.StatusBadGateway)
@@ -272,20 +272,20 @@ func handleFwUpdateStart(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-// scanMergeFw uebernimmt die frischen upgrade_state-Meldungen in den Speicher.
+// scanMergeFw merges the fresh upgrade_state messages into memory.
 func scanMergeFw(printers []Printer) (geprueft, mitUpdate int) {
 	mu.Lock()
 	defer mu.Unlock()
 	if state.FwUpdates == nil {
-		state.FwUpdates = map[string][]FwModulUpdate{}
+		state.FwUpdates = map[string][]FwModuleUpdate{}
 	}
 	for _, p := range printers {
 		st := mqttMgr.GetStatus(p.IP)
 		if st == nil || !st.Online {
-			continue // offline: alten Stand nicht anfassen
+			continue // offline: do not touch the old state
 		}
 		geprueft++
-		frisch := []FwModulUpdate{}
+		frisch := []FwModuleUpdate{}
 		for _, u := range st.Upgrade {
 			g := time.Now()
 			for _, a := range state.FwUpdates[p.IP] {
@@ -293,7 +293,7 @@ func scanMergeFw(printers []Printer) (geprueft, mitUpdate int) {
 					g = a.Gefunden // Fundzeitpunkt bewahren
 				}
 			}
-			frisch = append(frisch, FwModulUpdate{Modul: u.Modul, Aktuell: u.Aktuell, Neu: u.Neu, Gefunden: g})
+			frisch = append(frisch, FwModuleUpdate{Modul: u.Modul, Aktuell: u.Aktuell, Neu: u.Neu, Gefunden: g})
 		}
 		frisch = nochOffen(frisch, st)
 		if len(frisch) == 0 {

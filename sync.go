@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,20 @@ import (
 	"time"
 )
 
+// ftpProcTimeout caps how long a single Python FTP call may run. It is longer
+// than the script's own 20s socket timeout, and acts as a hard backstop: if the
+// process still hangs, it is killed so it cannot keep an FTP session open on the
+// printer (which would pile up toward the "421 too many connections" limit).
+const ftpProcTimeout = 45 * time.Second
+
+// ftpCommand builds the Python FTP command bound to a context that kills the
+// process when the timeout elapses.
+func ftpCommand(ctx context.Context, script string, args []string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, findPython(), append([]string{script}, args...)...)
+	hideWindow(cmd)
+	return cmd
+}
+
 // ─── SYNC CONFIG ──────────────────────────────────────────────────────────────
 
 type SyncConfig struct {
@@ -22,6 +37,22 @@ type SyncConfig struct {
 	AutoSync     bool   `json:"auto_sync"`
 	AutoInterval int    `json:"auto_interval"` // minutes, default 60
 	SDPath       string `json:"sd_path"`       // path on SD card, default "/"
+	Mode         string `json:"mode"`          // manual | auto | both
+	// ModelFolders: a separate local folder per printer model. Fits when
+	// each model needs different gcode files. Empty -> RefPath as default.
+	ModelFolders map[string]string `json:"model_folders,omitempty"`
+}
+
+// syncFolderFor returns the local folder for a model: the model mapping
+// first, otherwise the global default folder (RefPath).
+func syncFolderFor(model string) string {
+	m := strings.ToUpper(strings.TrimSpace(model))
+	if syncCfg.ModelFolders != nil {
+		if p := strings.TrimSpace(syncCfg.ModelFolders[m]); p != "" {
+			return p
+		}
+	}
+	return strings.TrimSpace(syncCfg.RefPath)
 }
 
 // ─── SYNC STATE ───────────────────────────────────────────────────────────────
@@ -84,7 +115,7 @@ func loadSyncConfig() {
 
 func saveSyncConfig() {
 	data, _ := json.MarshalIndent(syncCfg, "", "  ")
-	os.WriteFile(syncCfgFile, data, 0644)
+	atomicWrite(syncCfgFile, data, 0644)
 }
 
 func startAutoSync() {
@@ -114,39 +145,18 @@ func runSync() {
 		return
 	}
 
-	// Check ref path is accessible
-	refPath := syncCfg.RefPath
-	if refPath == "" {
+	// At least one folder must be configured — global or per model.
+	if strings.TrimSpace(syncCfg.RefPath) == "" && len(syncCfg.ModelFolders) == 0 {
 		syncProgress = SyncProgress{
 			Status: SyncIdle,
-			Errors: []string{"Kein Referenz-Ordner konfiguriert"},
-			Log:    []string{"Fehler: Kein Referenz-Ordner konfiguriert"},
+			Errors: []string{"Kein Ordner konfiguriert (global oder je Modell)"},
+			Log:    []string{"Fehler: Kein Ordner konfiguriert"},
 		}
 		syncMu.Unlock()
 		return
 	}
-
-	if _, err := os.Stat(refPath); err != nil {
-		syncProgress = SyncProgress{
-			Status: SyncIdle,
-			Errors: []string{"Referenz-Ordner nicht erreichbar: " + refPath},
-			Log:    []string{"Fehler: Referenz-Ordner nicht erreichbar — Sync abgebrochen"},
-		}
-		syncMu.Unlock()
-		return
-	}
-
-	// Load local gcode files
-	localFiles, err := listLocalGcode(refPath)
-	if err != nil || len(localFiles) == 0 {
-		msg := "Keine .gcode Dateien im Referenz-Ordner gefunden"
-		if err != nil {
-			msg = "Fehler beim Lesen des Referenz-Ordners: " + err.Error()
-		}
-		syncProgress = SyncProgress{Status: SyncIdle, Errors: []string{msg}, Log: []string{msg}}
-		syncMu.Unlock()
-		return
-	}
+	// Folder contents are read only once per folder.
+	folderCache := map[string]map[string]string{}
 
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -165,11 +175,9 @@ func runSync() {
 		Status: SyncRunning,
 		Total:  len(printers),
 		Errors: []string{},
-		Log:    []string{fmt.Sprintf("Sync gestartet — %d Drucker, %d lokale Dateien", len(printers), len(localFiles))},
+		Log:    []string{fmt.Sprintf("Sync gestartet — %d Drucker", len(printers))},
 	}
 	syncMu.Unlock()
-
-	logSync(fmt.Sprintf("Referenz-Ordner: %s", refPath))
 
 	for i, p := range printers {
 		// Check stop
@@ -204,7 +212,27 @@ func runSync() {
 
 		logSync(fmt.Sprintf("[%d/%d] %s (%s)", i+1, len(printers), p.Name, p.IP))
 
-		if err := syncPrinter(p, localFiles); err != nil {
+		folder := syncFolderFor(p.Model)
+		if strings.TrimSpace(folder) == "" {
+			logSync("  ⚠ kein Ordner fuer Modell " + p.Model + " — uebersprungen")
+			continue
+		}
+		lf, ok := folderCache[folder]
+		if !ok {
+			var lerr error
+			lf, lerr = listLocalGcode(folder)
+			if lerr != nil {
+				lf = map[string]string{}
+				logSync("  ⚠ Ordner nicht lesbar: " + folder)
+			}
+			folderCache[folder] = lf
+		}
+		if len(lf) == 0 {
+			logSync("  ⚠ keine Dateien im Ordner " + folder + " — uebersprungen")
+			continue
+		}
+
+		if err := syncPrinter(p, lf); err != nil {
 			logSync(fmt.Sprintf("  ✗ Fehler: %v", err))
 			syncMu.Lock()
 			syncProgress.Errors = append(syncProgress.Errors, p.Name+": "+err.Error())
@@ -497,6 +525,7 @@ type SDCardInfo struct {
 	FileCount int          `json:"file_count"`
 	TotalSize int64        `json:"total_size"` // bytes used by gcode files
 	Error     string       `json:"error,omitempty"`
+	ErrorCode string       `json:"error_code,omitempty"` // stable key for the UI translation
 	Files     []SDFileInfo `json:"files,omitempty"`
 }
 
@@ -520,7 +549,7 @@ func handleSyncSDList(w http.ResponseWriter, r *http.Request) {
 				case info := <-done:
 					json.NewEncoder(w).Encode(info)
 				case <-time.After(20 * time.Second):
-					json.NewEncoder(w).Encode(SDCardInfo{IP: ip, Error: "Timeout nach 20s"})
+					json.NewEncoder(w).Encode(sdErr(ip, "", "Timeout nach 20s", "ftpTimeout"))
 				}
 				return
 			}
@@ -545,7 +574,7 @@ func handleSyncSDList(w http.ResponseWriter, r *http.Request) {
 			case info := <-done:
 				results[idx] = info
 			case <-time.After(12 * time.Second):
-				results[idx] = SDCardInfo{IP: pr.IP, Name: pr.Name, Error: "Timeout"}
+				results[idx] = sdErr(pr.IP, pr.Name, "Timeout", "ftpTimeout")
 			}
 		}(i, p)
 	}
@@ -572,13 +601,18 @@ func (f *printerFTP) baseURL() string {
 	return fmt.Sprintf("ftps://%s:990", f.ip)
 }
 
-// Python FTP script with SSL session reuse (works with dem vsftpd des Druckers)
+// Python FTP script with SSL session reuse (works with the printer's vsftpd)
 const ftpPyScript = `
 import sys, ssl, ftplib, os, json, socket
 
+# Never let a stuck operation hang forever — the printer would keep the FTP
+# session open (half-open) and, with vsftpd's per-IP limit, that leads to
+# "421 too many connections" on later attempts.
+socket.setdefaulttimeout(20)
+
 class ImplicitFTP_TLS(ftplib.FTP_TLS):
     """Implicit FTPS client (port 990) with SSL session reuse for dem vsftpd des Druckers."""
-    
+
     def connect(self, host, port=990, timeout=10, source_address=None):
         # For implicit FTPS, wrap the socket in TLS immediately
         self.host = host
@@ -624,6 +658,21 @@ def main():
     ftp.prot_p()
     ftp.login('bblp', args.code)
 
+    # Everything below runs inside a try/finally so the control connection is
+    # ALWAYS closed cleanly (QUIT, or CLOSE if QUIT fails) — even on an error.
+    # A session left open would count against the printer's per-IP FTP limit.
+    try:
+      run_action(ftp, args)
+    finally:
+      try:
+        ftp.quit()
+      except Exception:
+        try:
+          ftp.close()
+        except Exception:
+          pass
+
+def run_action(ftp, args):
     if args.action == 'list':
         path = args.path if args.path else '/'
         files = []
@@ -745,7 +794,36 @@ def main():
     elif args.action == 'stor':
         ftp.storbinary('STOR ' + args.path, sys.stdin.buffer)
 
-    ftp.quit()
+    elif args.action == 'thumb':
+        # Download the .3mf into memory and pull out the plate preview PNG
+        # (Metadata/plate_1.png). Sliced 3MF files embed a colored render there.
+        import io, zipfile
+        buf = io.BytesIO()
+        ftp.retrbinary('RETR ' + args.path, buf.write)
+        buf.seek(0)
+        data = b''
+        try:
+            with zipfile.ZipFile(buf) as z:
+                names = z.namelist()
+                def score(n):
+                    nl = n.lower()
+                    if not (nl.startswith('metadata/') and nl.endswith('.png')):
+                        return -1
+                    if 'plate_1.png' in nl: return 100
+                    if 'plate_' in nl and 'small' not in nl: return 80
+                    if 'plate_' in nl: return 50
+                    if 'thumbnail' in nl or 'top' in nl: return 40
+                    return 10
+                cand = sorted([n for n in names if score(n) >= 0], key=score, reverse=True)
+                if cand:
+                    data = z.read(cand[0])
+        except Exception as e:
+            sys.stderr.write('thumb: ' + str(e) + chr(10))
+        if args.out:
+            with open(args.out, 'wb') as f:
+                f.write(data)
+        else:
+            sys.stdout.buffer.write(data)
 
 main()
 `
@@ -760,16 +838,46 @@ func writePyScript() (string, error) {
 	return tmp.Name(), nil
 }
 
-// friendlyFTPError uebersetzt das, was das Python-Hilfsskript im Fehlerfall auf
-// stderr schreibt, in einen Satz, den man lesen kann. Vorher landete der
-// vollstaendige Python-Traceback in der Oberflaeche — sechs Zeilen Technik, aus
-// denen niemand ablesen konnte, dass schlicht der Drucker nicht antwortet.
+// friendlyFTPError translates what the Python helper writes to stderr on
+// failure into a readable sentence. Previously the full
+// Python traceback ended up in the UI — six lines of tech from
+// which nobody could tell that the printer simply does not answer.
+// ftpErrKey maps a (raw or already-processed) error message to a
+// stable key. The UI translates this key via t() into
+// the chosen language — so e.g. the port-990 message appears in English
+// when the app is set to English, instead of hard-coded German. An empty return
+// means "no known category" (then the plain text stays).
+func ftpErrKey(raw string) string {
+	low := strings.ToLower(raw)
+	switch {
+	case is421(raw):
+		return "ftpBusy"
+	case strings.Contains(low, "990") && (strings.Contains(low, "zeitüber") || strings.Contains(low, "timed out") || strings.Contains(low, "timeout")):
+		return "ftpTimeout990"
+	case strings.Contains(low, "abgelehnt") || strings.Contains(low, "refused") || strings.Contains(low, "10061"):
+		return "ftpRefused990"
+	case strings.Contains(low, "nicht erreichbar") || strings.Contains(low, "no route") || strings.Contains(low, "unreachable"):
+		return "ftpNoRoute"
+	case strings.Contains(low, "zugangscode") || strings.Contains(low, "login") || strings.Contains(low, "530"):
+		return "ftpBadCode"
+	case strings.Contains(low, "verschlüssel") || strings.Contains(low, "ssl") || strings.Contains(low, "certificate"):
+		return "ftpSSL"
+	case strings.Contains(low, "nicht vorhanden") || strings.Contains(low, "no such") || strings.Contains(low, "550"):
+		return "ftpNoSuchFile"
+	case strings.Contains(low, "python"):
+		return "ftpNoPython"
+	case strings.Contains(low, "timeout") || strings.Contains(low, "zeitüber"):
+		return "ftpTimeout"
+	}
+	return ""
+}
+
 func friendlyFTPError(raw string) string {
 	t := strings.TrimSpace(raw)
 	if t == "" {
 		return "Drucker antwortet nicht"
 	}
-	// Nur die letzte Zeile des Tracebacks traegt die eigentliche Meldung.
+	// Only the last line of the traceback carries the actual message.
 	lines := strings.Split(strings.ReplaceAll(t, "\r\n", "\n"), "\n")
 	last := ""
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -780,11 +888,18 @@ func friendlyFTPError(raw string) string {
 	}
 	low := strings.ToLower(t)
 	switch {
+	case is421(t):
+		return "Drucker meldet zu viele FTP-Verbindungen (421) — zu viele gleichzeitige Zugriffe von diesem PC. Andere FTP-Programme schließen und kurz warten; das Tool versucht es automatisch erneut."
 	case strings.Contains(low, "timed out"), strings.Contains(low, "timeout"),
 		strings.Contains(low, "10060"), strings.Contains(low, "etimedout"):
-		return "Zeitüberschreitung — Drucker antwortet nicht auf Port 990"
+		// Bambu printers offer file access exclusively via implicit
+		// FTPS on port 990 — there is no other port. If 990 does not
+		// answer, it is almost always the printer: LAN/developer mode off,
+		// printer in cloud-only mode, or old firmware. So a hint here
+		// instead of just "timeout".
+		return "Zeitüberschreitung auf Port 990 — am Drucker den LAN-/Entwicklermodus einschalten (Einstellungen › Allgemein) und sicherstellen, dass er nicht nur im Cloud-Modus läuft. Einen anderen FTP-Port gibt es beim Drucker nicht."
 	case strings.Contains(low, "refused"), strings.Contains(low, "10061"):
-		return "Verbindung abgelehnt — FTP am Drucker aus oder falscher Port"
+		return "Verbindung auf Port 990 abgelehnt — FTP/LAN-Modus am Drucker ist aus. Einen anderen Port bietet der Drucker nicht."
 	case strings.Contains(low, "no route to host"), strings.Contains(low, "unreachable"),
 		strings.Contains(low, "10065"):
 		return "Drucker nicht erreichbar — im Netz nicht auffindbar"
@@ -811,16 +926,31 @@ func runPythonFTP(args []string) (string, error) {
 	}
 	defer os.Remove(script)
 
-	cmd := exec.Command(findPython(), append([]string{script}, args...)...)
-	hideWindow(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("%s", friendlyFTPError(string(exitErr.Stderr)))
+	// Only one FTP session per printer at a time (see ftpgate.go) — avoids the
+	// vsftpd per-IP connection limit that answers with "421 too many connections".
+	unlock := lockFTP(argIP(args))
+	defer unlock()
+
+	// On a 421 the printer is momentarily out of connection slots; wait briefly
+	// and retry instead of failing. This call has no stdin, so retrying is safe.
+	for attempt := 0; ; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), ftpProcTimeout)
+		cmd := ftpCommand(ctx, script, args)
+		out, err := cmd.Output()
+		cancel()
+		if err == nil {
+			return string(out), nil
 		}
-		return "", fmt.Errorf("%s", friendlyFTPError(err.Error()))
+		raw := err.Error()
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			raw = string(exitErr.Stderr)
+		}
+		if is421(raw) && attempt < len(ftpRetryDelays) {
+			time.Sleep(ftpRetryDelays[attempt])
+			continue
+		}
+		return "", fmt.Errorf("%s", friendlyFTPError(raw))
 	}
-	return string(out), nil
 }
 
 func runPythonFTPWithInput(args []string, r io.Reader) error {
@@ -829,6 +959,9 @@ func runPythonFTPWithInput(args []string, r io.Reader) error {
 		return err
 	}
 	defer os.Remove(script)
+
+	unlock := lockFTP(argIP(args))
+	defer unlock()
 
 	cmd := exec.Command(findPython(), append([]string{script}, args...)...)
 	hideWindow(cmd)
@@ -958,6 +1091,17 @@ func fetchSDSummary(p Printer) SDCardInfo {
 	files, err := listSD(p)
 	if err != nil {
 		info.Error = err.Error()
+		info.ErrorCode = ftpErrKey(info.Error)
+		// A "timeout"/TLS-looking failure on port 990 is often really the
+		// printer turning us away with a plaintext "421 too many connections"
+		// (its per-IP FTP limit). Knock once more and read the greeting so the
+		// real cause is shown instead of a misleading LAN-mode hint.
+		if info.ErrorCode != "ftpBusy" {
+			if fp := probeFTP990(p.IP); fp.Busy421 {
+				info.Error = "Drucker meldet zu viele FTP-Verbindungen (421) — andere FTP-Clients schließen oder Drucker kurz neu starten"
+				info.ErrorCode = "ftpBusy"
+			}
+		}
 		return info
 	}
 	for _, f := range files {
@@ -972,6 +1116,17 @@ func fetchSDFiles(p Printer) SDCardInfo {
 	files, err := listSD(p)
 	if err != nil {
 		info.Error = err.Error()
+		info.ErrorCode = ftpErrKey(info.Error)
+		// A "timeout"/TLS-looking failure on port 990 is often really the
+		// printer turning us away with a plaintext "421 too many connections"
+		// (its per-IP FTP limit). Knock once more and read the greeting so the
+		// real cause is shown instead of a misleading LAN-mode hint.
+		if info.ErrorCode != "ftpBusy" {
+			if fp := probeFTP990(p.IP); fp.Busy421 {
+				info.Error = "Drucker meldet zu viele FTP-Verbindungen (421) — andere FTP-Clients schließen oder Drucker kurz neu starten"
+				info.ErrorCode = "ftpBusy"
+			}
+		}
 		return info
 	}
 	info.Files = files
@@ -980,6 +1135,11 @@ func fetchSDFiles(p Printer) SDCardInfo {
 		info.TotalSize += f.Size
 	}
 	return info
+}
+
+// sdErr builds an SDCardInfo error response with a matching translation key.
+func sdErr(ip, name, msg, code string) SDCardInfo {
+	return SDCardInfo{IP: ip, Name: name, Error: msg, ErrorCode: code}
 }
 
 func handleSyncUpload(w http.ResponseWriter, r *http.Request) {
@@ -1013,6 +1173,12 @@ func handleSyncUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	// Accept only print files — otherwise junk ends up on the SD.
+	lname := strings.ToLower(header.Filename)
+	if !strings.HasSuffix(lname, ".gcode") && !strings.HasSuffix(lname, ".3mf") {
+		http.Error(w, `{"error":"Falsches Dateiformat: nur .gcode / .3mf erlaubt"}`, 400)
+		return
+	}
 	tmp, err := os.CreateTemp("", "printerfarm_upload_*_"+header.Filename)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, 500)
@@ -1039,22 +1205,33 @@ func handleSyncUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f2.Close()
 
-	// Jeder Versuch wird festgehalten — auch der gescheiterte. Gerade der ist
-	// spaeter interessant, wenn jemand fragt, warum eine Datei fehlt.
+	// Every attempt is recorded — even the failed one. That one is
+	// interesting later when someone asks why a file is missing.
 	start := time.Now()
-	eintrag := UploadEintrag{IP: ip, Name: printer.Name, Datei: header.Filename, Bytes: header.Size}
+	eintrag := UploadEntry{IP: ip, Name: printer.Name, Datei: header.Filename, Bytes: header.Size}
 
 	fc := &printerFTP{ip: ip, code: printer.Code}
 	if err := fc.stor(sdPath+header.Filename, f2); err != nil {
-		eintrag.Fehler = friendlyFTPError(err.Error())
+		friendly := friendlyFTPError(err.Error())
+		// Schreiben schlaegt fehl, obwohl FTP grundsaetzlich antwortet? Dann steckt
+		// usually no SD/USB card in the printer — that is the most common cause.
+		low := strings.ToLower(err.Error())
+		if strings.Contains(low, "550") || strings.Contains(low, "no such") ||
+			strings.Contains(low, "not found") || strings.Contains(low, "permission") ||
+			strings.Contains(low, "denied") || strings.Contains(low, "write") ||
+			strings.Contains(low, "storage") || strings.Contains(low, "space") {
+			friendly = "Upload fehlgeschlagen — steckt eine SD-Karte/USB im Drucker? Der Speicher lässt sich nicht beschreiben."
+		}
+		eintrag.Fehler = friendly
 		eintrag.Dauer = time.Since(start).Milliseconds()
-		merkeUpload(eintrag)
-		http.Error(w, `{"error":"`+err.Error()+`"}`, 500)
+		noteUpload(eintrag)
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]any{"error": friendly})
 		return
 	}
 	eintrag.Erfolg = true
 	eintrag.Dauer = time.Since(start).Milliseconds()
-	merkeUpload(eintrag)
+	noteUpload(eintrag)
 
 	w.Write([]byte(`{"ok":true,"file":"` + header.Filename + `"}`))
 }
@@ -1091,8 +1268,8 @@ func handleSyncDelete(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ok":true}`))
 }
 
-// deleteSDFile entfernt eine Datei von der SD-Karte. Ausgelagert, damit der
-// Mehrfach-Löschvorgang denselben Weg nimmt wie das Löschen einzelner Dateien.
+// deleteSDFile removes a file from the SD card. Extracted so the
+// bulk delete takes the same path as deleting single files.
 func deleteSDFile(ip, file string) error {
 	mu.Lock()
 	code := ""
@@ -1114,7 +1291,7 @@ func deleteSDFile(ip, file string) error {
 	if !strings.HasSuffix(sdPath, "/") {
 		sdPath += "/"
 	}
-	// Pfadtrennzeichen im Dateinamen wären ein Weg aus dem SD-Verzeichnis heraus
+	// Path separators in the file name would be a way out of the SD directory
 	if strings.ContainsAny(file, "/\\") {
 		return fmt.Errorf("ungültiger Dateiname %q", file)
 	}
@@ -1150,7 +1327,7 @@ func handleSyncDiskSpace(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(strings.TrimSpace(out)))
 }
 
-// ─── GEBÜNDELTES LÖSCHEN UND SPEICHER-ÜBERSICHT ───────────────────────────────
+// ─── BULK DELETE AND STORAGE OVERVIEW ─────────────────────────────────────────
 
 type deleteResult struct {
 	Path  string `json:"path"`
@@ -1159,8 +1336,8 @@ type deleteResult struct {
 }
 
 // deleteSDFiles entfernt mehrere Dateien eines Druckers in einer einzigen
-// FTP-Sitzung. Vorher lief je Datei ein eigener Python-Prozess mit eigener
-// Anmeldung — bei über hundert Dateien war das der Flaschenhals.
+// FTP session. Previously each file ran its own Python process with its own
+// login — with over a hundred files that was the bottleneck.
 func deleteSDFiles(ip string, files []string) ([]deleteResult, error) {
 	code, err := printerCode(ip)
 	if err != nil {
@@ -1198,7 +1375,7 @@ func deleteSDFiles(ip string, files []string) ([]deleteResult, error) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &res); err != nil {
 		return rejected, fmt.Errorf("unerwartete Antwort: %v", err)
 	}
-	// Vollen Pfad wieder auf den Dateinamen zurückführen
+	// Map the full path back to the file name
 	for i := range res {
 		res[i].Path = strings.TrimPrefix(res[i].Path, sdPath)
 	}
@@ -1206,8 +1383,8 @@ func deleteSDFiles(ip string, files []string) ([]deleteResult, error) {
 }
 
 func printerCode(ip string) (string, error) {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	for _, p := range state.Printers {
 		if p.IP == ip {
 			if p.Code == "" {
@@ -1219,13 +1396,16 @@ func printerCode(ip string) (string, error) {
 	return "", fmt.Errorf("unbekannter Drucker %s", ip)
 }
 
-// runPythonFTPOut wie runPythonFTP, reicht aber zusätzlich Eingaben durch.
+// runPythonFTPOut like runPythonFTP, but also passes input through.
 func runPythonFTPOut(args []string, stdin io.Reader) (string, error) {
 	script, err := writePyScript()
 	if err != nil {
 		return "", err
 	}
 	defer os.Remove(script)
+
+	unlock := lockFTP(argIP(args))
+	defer unlock()
 
 	cmd := exec.Command(findPython(), append([]string{script}, args...)...)
 	hideWindow(cmd)
@@ -1244,4 +1424,76 @@ type storageEntry struct {
 	Path string `json:"path"`
 	Dir  bool   `json:"dir"`
 	Size int64  `json:"size"`
+}
+
+// handleSyncDiff reports per printer which files on the SD are NOT
+// present in the assigned (model) folder. Basis for the hint in
+// the UI. Only reachable printers with an access code are checked.
+func handleSyncDiff(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	printers := append([]Printer(nil), state.Printers...)
+	mu.Unlock()
+	sdPath := syncCfg.SDPath
+	if sdPath == "" {
+		sdPath = "/"
+	}
+	folderCache := map[string]map[string]string{}
+	type diffRow struct {
+		IP     string   `json:"ip"`
+		Name   string   `json:"name"`
+		Model  string   `json:"model"`
+		Folder string   `json:"folder"`
+		Extra  []string `json:"extra"`
+		Err    string   `json:"err,omitempty"`
+	}
+	out := []diffRow{}
+	for _, p := range printers {
+		if strings.TrimSpace(p.Code) == "" {
+			continue
+		}
+		if s := mqttMgr.GetStatus(p.IP); s == nil || !s.Online {
+			continue
+		}
+		folder := syncFolderFor(p.Model)
+		row := diffRow{IP: p.IP, Name: p.Name, Model: p.Model, Folder: folder}
+		lf, ok := folderCache[folder]
+		if !ok {
+			l, _ := listLocalGcode(folder)
+			if l == nil {
+				l = map[string]string{}
+			}
+			lf = l
+			folderCache[folder] = lf
+		}
+		inFolder := map[string]bool{}
+		for name := range lf {
+			inFolder[strings.ToLower(name)] = true
+		}
+		fc, err := printerFTPConnect(p.IP, p.Code)
+		if err != nil {
+			row.Err = "FTP: " + err.Error()
+			out = append(out, row)
+			continue
+		}
+		existing, err := fc.list(sdPath)
+		fc.quit()
+		if err != nil {
+			row.Err = "SD: " + err.Error()
+			out = append(out, row)
+			continue
+		}
+		for _, e := range existing {
+			low := strings.ToLower(e.Name)
+			if !strings.HasSuffix(low, ".gcode") && !strings.HasSuffix(low, ".3mf") {
+				continue
+			}
+			if !inFolder[low] {
+				row.Extra = append(row.Extra, e.Name)
+			}
+		}
+		if len(row.Extra) > 0 || row.Err != "" {
+			out = append(out, row)
+		}
+	}
+	writeJSON(w, out)
 }

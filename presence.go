@@ -16,19 +16,19 @@ import (
 	"time"
 )
 
-// ─── MEHR-PC-NUTZUNG ÜBER DIE SD-KARTE DES DRUCKERS ───────────────────────────
+// ─── MULTI-PC USE VIA THE PRINTER'S SD CARD ───────────────────────────────────
 //
-// Statt eines geteilten Ordners auf dem PC nutzen wir die SD-Karte EINES Druckers
-// als gemeinsame Pinnwand. Dort liegt "multi-access-controll.json" mit einer
+// Instead of a shared folder on the PC we use ONE printer's SD card
+// as a shared pinboard. It holds "multi-access-controll.json" with an
 // kurzen Liste aktiver Sitzungen. Jede Instanz frischt in Abstaenden ihren
-// eigenen Eintrag auf (den „Cookie": ist er schon da mit unserer Kennung,
-// aendert sich nichts) und liest die der anderen. Trägt ein anderer PC einen
-// frischen Eintrag, laeuft er parallel — die Oberflaeche zeigt oben ein Band.
+// own entry (the "cookie": if it is already there with our id,
+// nothing changes) and reads the others'. If another PC adds a
+// fresh entry, it runs in parallel — the UI shows a banner on top.
 //
-// Bewusst nur EIN Drucker (der erste erreichbare) als Pinnwand, damit nicht auf
-// allen Geraeten FTP-Verkehr entsteht. Faellt er aus, uebernimmt automatisch der
-// naechste. Alles best-effort: klappt FTP nicht (Drucker offline, kein Python),
-// bleibt die Erkennung still — ohne Fehler.
+// Deliberately only ONE printer (the first reachable) as pinboard, so FTP
+// traffic does not hit every device. If it fails, the next one automatically
+// takes over. All best-effort: if FTP fails (printer offline, no Python),
+// detection stays silent — without error.
 
 var (
 	instanzID   string
@@ -52,7 +52,7 @@ type accessSession struct {
 	Zuletzt time.Time `json:"zuletzt"`
 }
 
-type multiAccessDatei struct {
+type multiAccessFile struct {
 	Sessions []accessSession `json:"sessions"`
 }
 
@@ -104,12 +104,12 @@ func logZugriff(was string) {
 	}
 }
 
-func beendePraesenz() { logZugriff("Stop") }
+func stopPresence() { logZugriff("Stop") }
 
-// mischeSessions raeumt veraltete Sitzungen weg, frischt den eigenen Eintrag auf
-// (Schluessel ist der Hostname = ein Eintrag je PC) und liefert die anderen
+// mergeSessions clears stale sessions, refreshes our own entry
+// (key is the hostname = one entry per PC) and returns the others
 // aktiven PCs zurueck. Reine Logik — dadurch testbar.
-func mischeSessions(alt []accessSession, host, user, instanz string, jetzt time.Time) (neu []accessSession, andere []string) {
+func mergeSessions(alt []accessSession, host, user, instanz string, jetzt time.Time) (neu []accessSession, andere []string) {
 	neu = []accessSession{}
 	eigenerDa := false
 	for _, s := range alt {
@@ -134,9 +134,9 @@ func mischeSessions(alt []accessSession, host, user, instanz string, jetzt time.
 	return neu, andere
 }
 
-// waehleZielDrucker sucht den ersten erreichbaren Drucker mit Zugangscode und
+// pickTargetPrinter finds the first reachable printer with an access code and
 // Seriennummer — er dient als Pinnwand.
-func waehleZielDrucker() (Printer, bool) {
+func pickTargetPrinter() (Printer, bool) {
 	mu.Lock()
 	printers := append([]Printer(nil), state.Printers...)
 	mu.Unlock()
@@ -159,24 +159,24 @@ func multiSDPfad() string {
 	return base + "/" + multiDatei
 }
 
-// aktualisiereMultiAccess liest die Pinnwand-Datei vom Drucker, frischt den
-// eigenen Eintrag auf, ermittelt andere PCs und schreibt die Datei zurueck.
-func aktualisiereMultiAccess() {
-	ziel, ok := waehleZielDrucker()
+// refreshMultiAccess reads the pinboard file from the printer, refreshes
+// our own entry, detects other PCs and writes the file back.
+func refreshMultiAccess() {
+	ziel, ok := pickTargetPrinter()
 	if !ok {
 		return
 	}
 	fc := &printerFTP{ip: ziel.IP, code: ziel.Code}
 	pfad := multiSDPfad()
 
-	var datei multiAccessDatei
+	var datei multiAccessFile
 	if rc, err := fc.retr(pfad); err == nil {
 		b, _ := io.ReadAll(rc)
 		rc.Close()
-		json.Unmarshal(b, &datei) // Fehler = leere Datei, ist ok
+		json.Unmarshal(b, &datei) // error = empty file, that's ok
 	}
 
-	neu, andere := mischeSessions(datei.Sessions, eigenerHost, winUser(), instanzID, time.Now())
+	neu, andere := mergeSessions(datei.Sessions, eigenerHost, winUser(), instanzID, time.Now())
 	datei.Sessions = neu
 
 	multiMu.Lock()
@@ -191,8 +191,8 @@ func aktualisiereMultiAccess() {
 func multiAccessLoop() {
 	time.Sleep(25 * time.Second) // dem Start Zeit lassen
 	for {
-		if !netzPausiert() {
-			aktualisiereMultiAccess()
+		if !netPaused() {
+			refreshMultiAccess()
 		}
 		time.Sleep(90 * time.Second)
 	}

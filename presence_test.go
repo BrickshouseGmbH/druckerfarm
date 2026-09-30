@@ -12,7 +12,7 @@ func TestMischeSessions(t *testing.T) {
 		{Host: "PC-2", User: "anna", Zuletzt: jetzt.Add(-1 * time.Minute)},      // fremd, frisch
 		{Host: "PC-3", User: "alt", Zuletzt: jetzt.Add(-10 * time.Minute)},      // fremd, veraltet
 	}
-	neu, andere := mischeSessions(alt, "PC-1", "reinhard", "DFxyz", jetzt)
+	neu, andere := mergeSessions(alt, "PC-1", "reinhard", "DFxyz", jetzt)
 
 	// PC-3 (veraltet) fliegt raus -> 2 Sitzungen (PC-1, PC-2)
 	if len(neu) != 2 {
@@ -28,7 +28,7 @@ func TestMischeSessions(t *testing.T) {
 	if eigen == nil || eigen.Instanz != "DFxyz" || !eigen.Zuletzt.Equal(jetzt) {
 		t.Fatalf("eigener Eintrag nicht aufgefrischt: %+v", eigen)
 	}
-	// andere: nur PC-2
+	// others: only PC-2
 	if len(andere) != 1 || andere[0] != "anna@PC-2" {
 		t.Fatalf("erwarte nur anna@PC-2, bekam %v", andere)
 	}
@@ -36,7 +36,7 @@ func TestMischeSessions(t *testing.T) {
 
 func TestMischeSessionsLegtEigenenAn(t *testing.T) {
 	jetzt := time.Now()
-	neu, andere := mischeSessions(nil, "PC-9", "u", "DFabc", jetzt)
+	neu, andere := mergeSessions(nil, "PC-9", "u", "DFabc", jetzt)
 	if len(neu) != 1 || neu[0].Host != "PC-9" {
 		t.Fatalf("eigener Eintrag sollte angelegt werden, bekam %+v", neu)
 	}

@@ -213,12 +213,12 @@ func TestPrintCommandPayloads(t *testing.T) {
 		if !strings.Contains(p, `"command":"`+c+`"`) || !strings.Contains(p, `"print"`) {
 			t.Fatalf("%s payload looks wrong: %s", c, p)
 		}
-		// "param" gehoert laut Protokoll zwingend dazu, auch leer. Fehlt es,
-		// nimmt der Drucker den Befehl an und tut nichts.
+		// "param" is mandatory per protocol, even empty. If missing,
+		// the printer accepts the command and does nothing.
 		if !strings.Contains(p, `"param":""`) {
 			t.Fatalf("%s: Pflichtfeld param fehlt: %s", c, p)
 		}
-		// Die Vorlage bekommt die sequence_id erst beim Senden.
+		// The template gets the sequence_id only when sending.
 		fertig := fmt.Sprintf(p, "9001")
 		if !json.Valid([]byte(fertig)) {
 			t.Fatalf("%s: kein gueltiges JSON: %s", c, fertig)
@@ -229,8 +229,8 @@ func TestPrintCommandPayloads(t *testing.T) {
 	}
 }
 
-// Gegen einen echten Payload aus druckerfarm.log — nicht gegen meine Annahme,
-// wie der Drucker die Daten schickt.
+// Against a real payload from druckerfarm.log — not against my assumption
+// of how the printer sends the data.
 func TestAMSAgainstRealPayload(t *testing.T) {
 	raw, err := os.ReadFile("testdata/ams_real.json")
 	if err != nil {
@@ -271,8 +271,8 @@ func TestAMSAgainstRealPayload(t *testing.T) {
 	if s.TrayNow != "0" {
 		t.Fatalf("tray_now = %q", s.TrayNow)
 	}
-	// Die externe Spule ist in diesen Daten leer und darf deshalb nicht als
-	// bestueckt durchgereicht werden.
+	// The external spool is empty in this data and must therefore not be
+	// passed through as loaded.
 	if s.ExtSpool != nil && s.ExtSpool.Type != "" {
 		t.Fatalf("empty external spool reported as loaded: %+v", s.ExtSpool)
 	}
@@ -280,9 +280,9 @@ func TestAMSAgainstRealPayload(t *testing.T) {
 		[]string{u.Trays[0].Color, u.Trays[1].Color, u.Trays[3].Color})
 }
 
-// Ein Drucker darf ohne Zugangscode angelegt werden — beim Aufbau einer Farm
-// traegt man erst die Geraete ein und die Codes spaeter nach. Name und Adresse
-// bleiben Bedingung, ohne die ist der Eintrag sinnlos.
+// A printer may be added without an access code — when building a farm
+// one enters the devices first and the codes later. Name and address
+// remain required; without them the entry is pointless.
 func TestAnlegenOhneZugangscode(t *testing.T) {
 	faelle := []struct {
 		name    string
@@ -313,9 +313,9 @@ func TestAnlegenOhneZugangscode(t *testing.T) {
 	}
 }
 
-// Duplikate werden an der Seriennummer erkannt, nicht an der IP: ein neues
-// Geraet mit einer IP, die ein bestehender (Offline-)Drucker noch traegt, muss
-// sich anlegen lassen. Dieselbe Seriennummer dagegen ist ein Duplikat.
+// Duplicates are detected by serial number, not by IP: a new
+// device with an IP a present (offline) printer still carries must
+// be addable. The same serial number, however, is a duplicate.
 func TestAddDuplikatUeberSeriennummer(t *testing.T) {
 	mu.Lock()
 	altP := state.Printers
@@ -329,7 +329,7 @@ func TestAddDuplikatUeberSeriennummer(t *testing.T) {
 		return rec.Code
 	}
 
-	// Gleiche IP, ANDERE Seriennummer -> erlaubt (der Alte ist offline/umgezogen).
+	// Same IP, DIFFERENT serial -> allowed (the old one is offline/moved).
 	if code := post(`{"name":"Neu","ip":"192.168.0.50","serial":"S-NEU","code":"y"}`); code != 201 {
 		t.Fatalf("gleiche IP, andere Serial sollte anlegen (201), bekam %d", code)
 	}

@@ -19,11 +19,11 @@ func TestVersionComparison(t *testing.T) {
 	}{
 		{"1.0.0", "1.0.1", true},
 		{"1.0.0", "v1.0.1", true},
-		{"1.9.0", "1.12.0", true}, // als Text waere 1.12 kleiner
+		{"1.9.0", "1.12.0", true}, // as text 1.12 would be smaller
 		{"1.12.0", "1.9.0", false},
 		{"1.0.0", "1.0.0", false},
 		{"2.0.0", "1.9.9", false},
-		{"dev", "1.0.0", true}, // ohne Versionsstempel gilt alles als neuer
+		{"dev", "1.0.0", true}, // without a version stamp everything counts as newer
 		{"1.0.0", "1.1", true},
 		{"1.1", "1.1.0", false},
 		{"1.0.0", "kaputt", false},
@@ -60,8 +60,8 @@ func setRepo(t *testing.T, repo string) {
 	t.Cleanup(func() { mu.Lock(); state.UpdateRepo = old; mu.Unlock() })
 }
 
-// Ohne eigene Einstellung liefert die Konfiguration das Standard-Repository —
-// die Update-Suche funktioniert damit ohne Einrichtung.
+// Without an own setting the configuration returns the default repository —
+// so the update check works without setup.
 func TestCheckWithoutRepoUsesDefault(t *testing.T) {
 	setRepo(t, "")
 	rec := httptest.NewRecorder()
@@ -84,7 +84,7 @@ func TestRepoFormatIsValidated(t *testing.T) {
 		t.Fatalf("want 400, got %d", rec.Code)
 	}
 
-	// vollständige URL soll akzeptiert und gekürzt werden
+	// a full URL should be accepted and shortened
 	rec2 := httptest.NewRecorder()
 	handleUpdateConfig(rec2, httptest.NewRequest("POST", "/api/update/config",
 		strings.NewReader(`{"repo":"https://github.com/besitzer/name.git"}`)))
@@ -139,7 +139,7 @@ func TestUpdateCheckAgainstFakeGitHub(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// fetchLatestRelease baut die URL selbst — deshalb hier über den Parser gehen
+	// fetchLatestRelease builds the URL itself — so go through the parser here
 	oldV := appVersion
 	appVersion = "1.0.0"
 	defer func() { appVersion = oldV }()
@@ -182,7 +182,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatalf("not persisted: %v %s", err, raw)
 	}
 
-	// Unsinn darf nichts überschreiben
+	// Nonsense must not overwrite anything
 	rec2 := httptest.NewRecorder()
 	handleSettings(rec2, httptest.NewRequest("POST", "/api/settings",
 		strings.NewReader(`{"theme":"neon","cols":999}`)))
@@ -228,7 +228,7 @@ func TestMigrationCopiesExistingSetup(t *testing.T) {
 		}
 	}
 
-	// Zweiter Lauf darf eine inzwischen geänderte Konfiguration nicht überschreiben
+	// A second run must not overwrite a meanwhile-changed configuration
 	os.WriteFile(dataFile, []byte(`{"printers":[]}`), 0o644)
 	migrateFromExeDir(exeDir)
 	raw, _ := os.ReadFile(dataFile)
@@ -246,15 +246,15 @@ func TestOldExeNameSitsNextToTheProgram(t *testing.T) {
 	}
 }
 
-// Der heikelste Teil: die laufende Datei durch eine neue ersetzen. Windows
-// verbietet das Überschreiben, erlaubt aber das Umbenennen — genau darauf baut
-// applyUpdate. Hier wird der komplette Ablauf mit echten Dateien durchgespielt.
+// The trickiest part: replacing the running file with a new one. Windows
+// forbids overwriting but allows renaming — exactly what
+// applyUpdate builds on. Here the full flow is exercised with real files.
 func TestApplyUpdateReplacesItselfAndKeepsARollback(t *testing.T) {
 	dir := t.TempDir()
 	running := filepath.Join(dir, "druckerfarm")
 	marker := filepath.Join(dir, "gestartet.txt")
 
-	// "alte Fassung" — beim Start hinterlässt sie eine Spur
+	// "old build" — on start it leaves a trace
 	os.WriteFile(running, []byte("#!/bin/sh\necho alt > "+marker+"\n"), 0o755)
 	newFile := filepath.Join(dir, "neu")
 	os.WriteFile(newFile, []byte("#!/bin/sh\necho neu > "+marker+"\n"), 0o755)
@@ -267,17 +267,17 @@ func TestApplyUpdateReplacesItselfAndKeepsARollback(t *testing.T) {
 		t.Fatalf("applyUpdate: %v", err)
 	}
 
-	// neue Fassung liegt am Platz der alten
+	// new build sits in place of the old one
 	got, _ := os.ReadFile(running)
 	if !strings.Contains(string(got), "echo neu") {
 		t.Fatalf("new version was not put in place: %q", got)
 	}
-	// Vorgänger bleibt als Rückweg liegen
+	// the predecessor remains as a way back
 	prev, err := os.ReadFile(running + ".old")
 	if err != nil || !strings.Contains(string(prev), "echo alt") {
 		t.Fatalf("no rollback copy: %v %q", err, prev)
 	}
-	// und sie wurde gestartet
+	// and it was started
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if b, err := os.ReadFile(marker); err == nil && strings.Contains(string(b), "neu") {
@@ -288,8 +288,8 @@ func TestApplyUpdateReplacesItselfAndKeepsARollback(t *testing.T) {
 	t.Fatal("new version was not started")
 }
 
-// Schlägt das Ablegen fehl, muss die alte Fassung zurückkommen — sonst stünde
-// der Rechner ohne lauffähiges Programm da.
+// If placing fails, the old build must come back — otherwise the
+// machine would be left without a runnable program.
 func TestApplyUpdateRollsBackOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	running := filepath.Join(dir, "druckerfarm")
@@ -299,7 +299,7 @@ func TestApplyUpdateRollsBackOnFailure(t *testing.T) {
 	exePath = running
 	defer func() { exePath = old }()
 
-	// Quelle existiert nicht → copyFile schlägt fehl
+	// source does not exist → copyFile fails
 	if err := applyUpdate(filepath.Join(dir, "gibtsnicht")); err == nil {
 		t.Fatal("expected an error")
 	}
@@ -312,7 +312,7 @@ func TestApplyUpdateRollsBackOnFailure(t *testing.T) {
 	}
 }
 
-// cleanupOldExe räumt den Rückweg beim nächsten erfolgreichen Start weg.
+// cleanupOldExe removes the way-back on the next successful start.
 func TestCleanupRemovesRollbackCopy(t *testing.T) {
 	dir := t.TempDir()
 	running := filepath.Join(dir, "druckerfarm")
@@ -332,8 +332,8 @@ func TestCleanupRemovesRollbackCopy(t *testing.T) {
 	}
 }
 
-// Ohne eigene Einstellung wird das Standard-Repository verwendet, damit die
-// Update-Suche ohne Einrichtung funktioniert.
+// Without an own setting the default repository is used so the
+// update check works without setup.
 func TestUpdateRepoStandard(t *testing.T) {
 	mu.Lock()
 	alt := state.UpdateRepo

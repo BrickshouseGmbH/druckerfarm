@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-// Ein doppelter Schlüssel lässt go2rtc die GESAMTE streams-Sektion verwerfen —
-// nachgewiesen gegen das echte go2rtc. Deshalb darf die Datei keine enthalten.
+// A duplicate key makes go2rtc discard the ENTIRE streams section —
+// verified against the real go2rtc. So the file must contain none.
 func TestYamlHasNoDuplicateKeys(t *testing.T) {
 	printers := []Printer{
 		{Name: "woobly 1", IP: "10.0.0.1", Code: "a"},
 		{Name: "Woobly-1", IP: "10.0.0.2", Code: "b"}, // ergibt denselben Namen
-		{Name: "WOOBLY 1", IP: "10.0.0.3", Code: "c"}, // und nochmal
+		{Name: "WOOBLY 1", IP: "10.0.0.3", Code: "c"}, // and again
 		{Name: "woobly 2", IP: "10.0.0.4", Code: "d"},
 	}
 	yaml := buildYaml(printers, nil)
@@ -33,7 +33,7 @@ func TestYamlHasNoDuplicateKeys(t *testing.T) {
 			t.Fatalf("Schlüssel %q kommt %dx vor — go2rtc würde alle Streams verwerfen:\n%s", k, n, yaml)
 		}
 	}
-	// Alle vier Drucker müssen vertreten sein
+	// All four printers must be present
 	for _, p := range printers {
 		if !strings.Contains(yaml, p.IP) {
 			t.Fatalf("%s fehlt in der Konfiguration:\n%s", p.IP, yaml)
@@ -62,7 +62,7 @@ func TestStreamNameForResolvesDuplicates(t *testing.T) {
 	t.Logf("%q und %q", a, b)
 }
 
-// Die Diagnose muss das Nötige liefern, ohne Zugangscodes preiszugeben.
+// The diagnostics must provide what is needed without exposing access codes.
 func TestDiagnosticsAreCompleteAndSafe(t *testing.T) {
 	dir := t.TempDir()
 	oldDir := appDir
@@ -113,7 +113,7 @@ func TestTailFileHandlesMissing(t *testing.T) {
 	}
 }
 
-// go2rtc muss seine Ausgabe in eine Datei schreiben — sonst ist jede Fehlersuche Raten.
+// go2rtc must write its output to a file — otherwise every debugging is guesswork.
 func TestGo2rtcOutputIsCaptured(t *testing.T) {
 	dir := t.TempDir()
 	oldDir := appDir
@@ -147,10 +147,10 @@ func waitFor(t *testing.T, path, needle string) {
 
 func sleepShort() { time.Sleep(100 * time.Millisecond) }
 
-// Die H-Reihe antwortet auf rtspx:// mit einer Umleitung und liefert kein Bild.
-// Fuer sie muss rtsps:// zuerst stehen; fuer die X1-Reihe bleibt es umgekehrt.
-// Angegeben werden immer beide, damit ein Geraet auch dann ein Bild liefert,
-// wenn es sich anders verhaelt als sein Modellname vermuten laesst.
+// The H series responds to rtspx:// with a redirect and returns no image.
+// For it rtsps:// must come first; for the X1 series it stays the other way.
+// Both are always given so a device returns an image even
+// when it behaves differently than its model name suggests.
 func TestKameraQuellenReihenfolge(t *testing.T) {
 	faelle := []struct {
 		modell, zuerst string
@@ -165,14 +165,14 @@ func TestKameraQuellenReihenfolge(t *testing.T) {
 		{"", "rtspx://"},
 	}
 	for _, f := range faelle {
-		q := kameraQuellen(Printer{Model: f.modell, IP: "10.0.0.1", Code: "abc"}, nil)
+		q := cameraSources(Printer{Model: f.modell, IP: "10.0.0.1", Code: "abc"}, nil)
 		if len(q) != 2 {
 			t.Fatalf("%s: erwartet 2 Adressen, bekommen %d", f.modell, len(q))
 		}
 		if !strings.HasPrefix(q[0], f.zuerst) {
 			t.Fatalf("%s: erste Adresse sollte mit %s beginnen: %s", f.modell, f.zuerst, q[0])
 		}
-		// Die jeweils andere Form muss als Rueckfallebene dabei sein.
+		// The other form must be included as a fallback.
 		if strings.HasPrefix(q[1], f.zuerst) {
 			t.Fatalf("%s: zweite Adresse ist dieselbe Form: %s", f.modell, q[1])
 		}
@@ -184,7 +184,7 @@ func TestKameraQuellenReihenfolge(t *testing.T) {
 	}
 }
 
-// In der Konfiguration muessen beide Adressen unter demselben Namen stehen.
+// In the configuration both addresses must be under the same name.
 func TestYamlEnthaeltBeideAdressen(t *testing.T) {
 	y := buildYaml([]Printer{{Name: "h11", Model: "H2D", IP: "10.0.0.5", Code: "xy"}}, nil)
 	if !strings.Contains(y, "rtsps://bblp:xy@10.0.0.5:322") {
@@ -193,10 +193,8 @@ func TestYamlEnthaeltBeideAdressen(t *testing.T) {
 	if !strings.Contains(y, "rtspx://bblp:xy@10.0.0.5:322") {
 		t.Fatalf("rtspx fehlt:\n%s", y)
 	}
-	// rtsps muss bei der H-Reihe zuerst kommen
+	// rtsps must come first for the H series
 	if strings.Index(y, "rtsps://") > strings.Index(y, "rtspx://") {
 		t.Fatalf("bei H2D muss rtsps zuerst stehen:\n%s", y)
 	}
 }
-
-

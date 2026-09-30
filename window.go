@@ -16,11 +16,11 @@ func hideConsoleOnWindows() {
 
 func appUserDataDir() string {
 	dir := filepath.Join(os.TempDir(), "druckerfarm-profile")
-	// Das Profil wird bewusst NICHT mehr bei jedem Start geloescht. Ein kaltes
-	// Profil zwingt Edge zu einer Erstinitialisierung, bei der sich der
-	// gestartete Prozess selbst neu startet und sofort beendet — was frueher den
-	// Server mitgerissen hat. Fuers Cache-Busting ist der Loeschvorgang ohnehin
-	// unnoetig: serveUI liefert die Seite mit no-store aus.
+	// The profile is deliberately NO longer deleted on every start. A cold
+	// profile forces Edge into a first-time init in which the
+	// started process restarts itself and exits immediately — which used to take
+	// the server down with it. For cache busting the deletion is
+	// unnecessary anyway: serveUI serves the page with no-store.
 	os.MkdirAll(dir, 0755)
 	return dir
 }
@@ -116,17 +116,17 @@ func launchAppWindow(url string) (*exec.Cmd, error) {
 	}
 }
 
-// appWindowMode sagt, wie das Fenster geoeffnet wurde: "app" = Edge/Chrome im
+// appWindowMode reports how the window was opened: "app" = Edge/Chrome in
 // App-Modus, "browser" = Standardbrowser als Rueckfallebene.
 var appWindowMode = "app"
 
 func waitForWindow(cmd *exec.Cmd, shutdown chan struct{}) {
 	if cmd == nil {
-		// Kein Chromium gefunden — die Seite laeuft im Standardbrowser, auf
-		// dessen Prozess wir nicht warten koennen. Frueher kehrte die Funktion
-		// hier einfach zurueck und schloss shutdown nie: die App lief dann
-		// endlos weiter, auch nach dem Schliessen des Tabs. Stattdessen sofort
-		// weitergeben, damit die Leerlauf-Erkennung uebernimmt.
+		// No Chromium found — the page runs in the default browser, whose
+		// process we cannot wait on. Previously the function returned
+		// here and never closed shutdown: the app then ran
+		// forever, even after closing the tab. Instead pass on
+		// immediately so the idle detection takes over.
 		close(shutdown)
 		return
 	}

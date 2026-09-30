@@ -35,8 +35,8 @@ func num(v any) int {
 	return int(f)
 }
 
-// Der Zwischenstand liefert nur, was seit dem letzten Abruf dazugekommen ist —
-// sonst müsste die Oberfläche die Liste bei jedem Abruf neu bauen.
+// The progress snapshot returns only what was added since the last fetch —
+// otherwise the UI would have to rebuild the list on every fetch.
 func TestJobDeliversOnlyNewEntries(t *testing.T) {
 	resetJobs()
 	j := newJob("search", "test", 3)
@@ -50,7 +50,7 @@ func TestJobDeliversOnlyNewEntries(t *testing.T) {
 		t.Fatalf("progress wrong: %v", d)
 	}
 
-	// nochmal mit demselben Stand abfragen → nichts Neues
+	// query again with the same state → nothing new
 	if got := len(status(t, j.id, 1, 0)["hits"].([]any)); got != 0 {
 		t.Fatalf("already known hits were delivered again")
 	}
@@ -87,7 +87,7 @@ func TestUnknownJobIs404(t *testing.T) {
 	}
 }
 
-// Ein Abbruch muss laufende Arbeit stoppen, nicht nur ein Flag setzen.
+// A cancel must stop running work, not just set a flag.
 func TestStopEndsTheWork(t *testing.T) {
 	resetJobs()
 	j := newJob("search", "x", 100)
@@ -128,7 +128,7 @@ func TestStopEndsTheWork(t *testing.T) {
 	if d["stopped"] != true || d["complete"] != true {
 		t.Fatalf("state after stop: %v", d)
 	}
-	// Zweiter Abbruch darf nicht in einen Panic laufen
+	// A second cancel must not run into a panic
 	j.stop()
 }
 
@@ -157,7 +157,7 @@ func TestSearchWithoutPrintersInFilter(t *testing.T) {
 	}
 }
 
-// Ein Löschauftrag darf nur Drucker treffen, die wirklich in der Liste stehen.
+// A delete job may only hit printers that are actually in the list.
 func TestDeleteIgnoresUnknownPrinters(t *testing.T) {
 	resetJobs()
 	mu.Lock()
@@ -180,7 +180,7 @@ func TestDeleteIgnoresUnknownPrinters(t *testing.T) {
 	}
 }
 
-// Ein Dateiname mit Pfadtrennern wäre ein Weg aus dem SD-Verzeichnis heraus.
+// A file name with path separators would be a way out of the SD directory.
 func TestDeleteRejectsPathTraversal(t *testing.T) {
 	mu.Lock()
 	old := state.Printers
@@ -198,7 +198,7 @@ func TestDeleteRejectsPathTraversal(t *testing.T) {
 	}
 }
 
-// Beendete Vorgänge dürfen sich nicht endlos ansammeln.
+// Finished operations must not accumulate endlessly.
 func TestFinishedJobsAreCleanedUp(t *testing.T) {
 	resetJobs()
 	oldJ := newJob("search", "alt", 1)
@@ -207,16 +207,16 @@ func TestFinishedJobsAreCleanedUp(t *testing.T) {
 	oldJ.finished = time.Now().Add(-2 * jobKeepFor)
 	oldJ.mu.Unlock()
 
-	newJob("search", "neu", 1) // legt beim Anlegen den alten weg
+	newJob("search", "neu", 1) // replaces the old one on creation
 	if getJob(oldJ.id) != nil {
 		t.Fatal("expired job was not cleaned up")
 	}
 }
 
-// ─── Gebündeltes Löschen ──────────────────────────────────────────────────────
+// ─── Bulk delete ──────────────────────────────────────────────────────────────
 
-// Die Dateien eines Druckers müssen in EINEN Aufruf gehen, nicht in einen pro
-// Datei — das war der Flaschenhals bei über hundert Dateien.
+// A printer's files must go in ONE call, not one per
+// file — that was the bottleneck with over a hundred files.
 func TestDeleteGroupsFilesPerPrinter(t *testing.T) {
 	resetJobs()
 	mu.Lock()
@@ -258,7 +258,7 @@ func TestBundledDeleteRejectsBadNames(t *testing.T) {
 	mu.Unlock()
 	defer func() { mu.Lock(); state.Printers = old; mu.Unlock() }()
 
-	// Nur unzulässige Namen: es darf kein FTP-Aufruf entstehen, das Ergebnis
+	// Only invalid names: no FTP call may occur, the result
 	// meldet sie als abgelehnt.
 	res, err := deleteSDFiles("10.0.0.1", []string{"../fremd.3mf", "unter/ordner.3mf"})
 	if err != nil {
@@ -327,7 +327,7 @@ func TestBlinkModelDefaults(t *testing.T) {
 	}
 }
 
-// Ohne MQTT-Verbindung muss der Lichtbefehl einen klaren Fehler liefern statt
+// Without an MQTT connection the light command must return a clear error instead
 // still ins Leere zu laufen.
 func TestChamberLightWithoutConnection(t *testing.T) {
 	err := mqttMgr.SetChamberLight(Printer{IP: "10.9.9.9", Serial: "ABC"}, "flashing", 1000, 1000)
@@ -339,10 +339,10 @@ func TestChamberLightWithoutConnection(t *testing.T) {
 	}
 }
 
-// ─── Blinken zuverlässig beenden ──────────────────────────────────────────────
+// ─── Stop blinking reliably ───────────────────────────────────────────────────
 
-// Der Drucker schickt das hms-Feld nicht bei jeder Nachricht mit. Ohne Aufräumen
-// bliebe eine alte Störung ewig stehen und das Licht würde endlos blinken.
+// The printer does not send the hms field with every message. Without cleanup
+// an old fault would stay forever and the light would blink endlessly.
 func TestResumeClearsStaleFaults(t *testing.T) {
 	ip := "10.9.9.9"
 	mqttMgr.mu.Lock()
@@ -354,13 +354,13 @@ func TestResumeClearsStaleFaults(t *testing.T) {
 		mqttMgr.mu.Unlock()
 	}()
 
-	// Störung tritt auf
+	// A fault occurs
 	mqttMgr.handleMessage(ip, []byte(`{"print":{"gcode_state":"PAUSE","print_error":117,"hms":[{"ecode":"0300_0100"}]}}`))
 	if !printerHasError(mqttMgr.GetStatus(ip)) {
 		t.Fatal("fault was not detected")
 	}
 
-	// Druck läuft wieder — ohne hms-Feld, so wie es der Drucker meist schickt
+	// Print runs again — without hms field, as the printer usually sends it
 	mqttMgr.handleMessage(ip, []byte(`{"print":{"gcode_state":"RUNNING","mc_percent":12}}`))
 	s := mqttMgr.GetStatus(ip)
 	if len(s.HmsErrors) != 0 || s.PrintError != 0 {
@@ -371,7 +371,7 @@ func TestResumeClearsStaleFaults(t *testing.T) {
 	}
 }
 
-// Läuft der Druck durchgehend, darf ein Statusupdate die Störung nicht löschen.
+// If the print runs continuously, a status update must not clear the fault.
 func TestFaultDuringRunningIsKept(t *testing.T) {
 	ip := "10.9.9.8"
 	mqttMgr.mu.Lock()
@@ -390,7 +390,7 @@ func TestFaultDuringRunningIsKept(t *testing.T) {
 	}
 }
 
-// Nach einem Neustart der App muss bekannt sein, wer noch blinkt.
+// After an app restart it must be known who is still blinking.
 func TestBlinkingListSurvivesRestart(t *testing.T) {
 	mu.Lock()
 	old := state.BlinkingIPs
@@ -414,11 +414,11 @@ func TestBlinkingListSurvivesRestart(t *testing.T) {
 	}
 }
 
-// Abschalten der Sonderbeleuchtung setzt die Liste zurück.
+// Turning off the special lighting resets the list.
 func TestDisablingBlinkResetsTheList(t *testing.T) {
 	mu.Lock()
 	oldP, oldB := state.Printers, state.BlinkingIPs
-	state.Printers = nil // ohne MQTT-Verbindung passiert nichts weiter
+	state.Printers = nil // without an MQTT connection nothing further happens
 	state.BlinkingIPs = []string{"10.0.0.5"}
 	mu.Unlock()
 	defer func() { mu.Lock(); state.Printers, state.BlinkingIPs = oldP, oldB; mu.Unlock() }()

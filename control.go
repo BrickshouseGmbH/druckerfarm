@@ -9,17 +9,17 @@ import (
 
 // ─── TEMPERATUR UND FILAMENT STEUERN ──────────────────────────────────────────
 //
-// Beide Wege laufen ueber dieselbe MQTT-Quittung wie Pause/Weiter/Stop. Ohne
-// Developer Mode am Geraet lehnt die Firmware sie mit "mqtt message verify
-// failed" ab — die Meldung sagt das dann und verweist auf den Developer Mode.
+// Both paths use the same MQTT acknowledgement as pause/resume/stop. Without
+// Developer Mode on the device, the firmware rejects them with "mqtt message verify
+// failed" — the message then says so and points to Developer Mode.
 
 const (
 	nozzleMax = 300
 	bedMax    = 120
 )
 
-// findePrinter sucht einen Drucker anhand der IP. Gibt eine Kopie zurueck,
-// damit der Aufrufer nicht unter der Sperre arbeiten muss.
+// findePrinter looks up a printer by IP. Returns a copy
+// so the caller does not have to work under the lock.
 func findePrinter(ip string) (Printer, bool) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -33,13 +33,13 @@ func findePrinter(ip string) (Printer, bool) {
 
 type tempReq struct {
 	IP   string `json:"ip"`
-	Was  string `json:"was"` // "nozzle" oder "bed"
+	Was  string `json:"was"` // "nozzle" or "bed"
 	Temp int    `json:"temp"`
 }
 
-// tempGcode baut die G-Code-Zeile. M104 heizt die Duese, M140 das Bett; beide
-// setzen nur den Sollwert und warten nicht (kein M109/M190), damit die
-// Oberflaeche nicht blockiert.
+// tempGcode builds the G-code line. M104 heats the nozzle, M140 the bed; both
+// only set the target and do not wait (no M109/M190) so the
+// UI does not block.
 func tempGcode(was string, temp int) (string, error) {
 	switch was {
 	case "nozzle":
@@ -88,7 +88,7 @@ func handleSetTemp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unbekannter Drucker", http.StatusNotFound)
 		return
 	}
-	seq := naechsteSeq()
+	seq := nextSeq()
 	if err := mqttMgr.SendRaw(p, "gcode_line", seq, gcodePayload(line, seq)); err != nil {
 		writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
 		return
@@ -101,14 +101,14 @@ type filamentReq struct {
 	AmsID     int    `json:"ams_id"`
 	TrayID    int    `json:"tray_id"`
 	Type      string `json:"tray_type"`     // PLA, PETG, ABS …
-	Color     string `json:"tray_color"`    // RRGGBB oder RRGGBBAA
+	Color     string `json:"tray_color"`    // RRGGBB or RRGGBBAA
 	InfoIdx   string `json:"tray_info_idx"` // Profil-Kennung, kodiert Marke+Typ (z. B. GFA00)
 	NozzleMin int    `json:"nozzle_temp_min"`
 	NozzleMax int    `json:"nozzle_temp_max"`
 }
 
-// normFarbe macht aus einer Farbe die vom Drucker erwartete Form RRGGBBAA.
-func normFarbe(c string) string {
+// normColor turns a color into the RRGGBBAA form the printer expects.
+func normColor(c string) string {
 	c = strings.TrimPrefix(strings.TrimSpace(c), "#")
 	c = strings.ToUpper(c)
 	switch len(c) {
@@ -135,7 +135,7 @@ func filamentPayload(f filamentReq, seq string) (string, error) {
 			"ams_id":          f.AmsID,
 			"tray_id":         f.TrayID,
 			"tray_info_idx":   f.InfoIdx,
-			"tray_color":      normFarbe(f.Color),
+			"tray_color":      normColor(f.Color),
 			"nozzle_temp_min": f.NozzleMin,
 			"nozzle_temp_max": f.NozzleMax,
 			"tray_type":       strings.ToUpper(f.Type),
@@ -155,7 +155,7 @@ func handleSetFilament(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	seq := naechsteSeq()
+	seq := nextSeq()
 	payload, err := filamentPayload(body, seq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

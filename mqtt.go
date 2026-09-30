@@ -27,6 +27,7 @@ type PrinterStatus struct {
 	TotalLayers int    `json:"total_layers"`
 	RemainTime  int    `json:"remain_time"`
 	SubtaskName string `json:"subtask_name"`
+	GcodeFile   string `json:"gcode_file"` // fallback source for the print file name
 
 	NozzleTemp   float64 `json:"nozzle_temp"`
 	NozzleTarget float64 `json:"nozzle_target"`
@@ -38,32 +39,47 @@ type PrinterStatus struct {
 	PrintError int      `json:"print_error"`
 	HmsErrors  []string `json:"hms_errors"`
 
-	// AckedHms sind Stoerungsmeldungen, die beim Anlaufen des Drucks bereits
-	// anstanden. Der X1 schickt bei jeder Meldung die vollstaendige HMS-Liste
-	// mit — auch dann noch, wenn der Druck laengst weiterlaeuft und die
-	// Meldung am Geraet nur nicht quittiert wurde. Ohne dieses Gedaechtnis
-	// fuellte sich HmsErrors sofort nach dem Leeren wieder und das Kammerlicht
+	// AI/camera monitoring (xcam): the printer's built-in error detection
+	// (Erstschicht-Inspektion, Spaghetti-/Fremdkoerper-Erkennung). Rohfelder
+	// are included so nothing is lost; AiMonitoring is the
+	// derived yes/no answer. The raw LIDAR point cloud is NOT exposed by the
+	// printer over the local interface.
+	Xcam         map[string]interface{} `json:"xcam,omitempty"`
+	AiMonitoring bool                   `json:"ai_monitoring,omitempty"`
+
+	// Timelapse is the timelapse state reported by the printer from
+	// ipcam.timelapse ("enable"/"disable"). Empty when the printer has
+	// not (yet) reported the field. TimelapseKnown distinguishes "off" from
+	// "unbekannt".
+	Timelapse      string `json:"timelapse,omitempty"`
+	TimelapseKnown bool   `json:"timelapse_known,omitempty"`
+
+	// AckedHms are fault messages that were already present when the print
+	// started. The X1 sends the full HMS list with every message,
+	// even when the print has long continued and the
+	// message was merely not acknowledged on the device. Without this memory
+	// HmsErrors refilled right after clearing and the chamber light
 	// blinkte endlos weiter.
 	AckedHms map[string]bool `json:"-"`
 
-	// AMS und Filament
+	// AMS and filament
 	AMS      []AMSUnit `json:"ams"`
 	TrayNow  string    `json:"tray_now"`
 	ExtSpool *AMSTray  `json:"ext_spool,omitempty"`
 
-	// Geraeteinfo aus info.get_version — Firmware und AMS-Staende
-	Info *GeraeteInfo `json:"info,omitempty"`
+	// Device info from info.get_version — firmware and AMS levels
+	Info *DeviceInfo `json:"info,omitempty"`
 
-	// Offene Firmware-Updates, wie der Drucker sie selbst meldet (upgrade_state /
+	// Open firmware updates as the printer reports them (upgrade_state /
 	// new_ver_list im pushall). Rein lesend — dieses Programm loest nichts aus.
-	Upgrade []UpgradeMeldung `json:"upgrade,omitempty"`
+	Upgrade []UpgradeMessage `json:"upgrade,omitempty"`
 
 	// Debug
 	MsgCount  int    `json:"msg_count"`
 	LastTopic string `json:"last_topic,omitempty"`
 }
 
-// AMSTray ist ein einzelnes Fach. Color kommt als RRGGBBAA vom Drucker.
+// AMSTray is a single tray. Color comes as RRGGBBAA from the printer.
 type AMSTray struct {
 	Slot     string   `json:"slot"`
 	Type     string   `json:"type"`
@@ -80,8 +96,8 @@ type AMSUnit struct {
 	Trays    []AMSTray `json:"trays"`
 }
 
-// mqttDebug schaltet das Mitschreiben kompletter MQTT-Payloads ein. Standardmaessig
-// aus: bei 36 Druckern schreibt das sonst Megabyte pro Minute ins Logfile.
+// mqttDebug enables logging of complete MQTT payloads. By default
+// off: with 36 printers this would otherwise write megabytes per minute to the log.
 var mqttDebug = os.Getenv("DRUCKERFARM_MQTT_DEBUG") != ""
 
 // ─── MQTT MANAGER ─────────────────────────────────────────────────────────────
@@ -91,7 +107,7 @@ type MQTTManager struct {
 	clients     map[string]mqtt.Client
 	statuses    map[string]*PrinterStatus
 	lastPayload map[string]string // raw payload for debug
-	lastUpgrade map[string]string // roher upgrade_state je IP, für Diagnose
+	lastUpgrade map[string]string // raw upgrade_state per IP, for diagnostics
 }
 
 var mqttMgr = &MQTTManager{
@@ -117,21 +133,21 @@ func (m *MQTTManager) Connect(p Printer) {
 
 	opts := mqtt.NewClientOptions()
 
-	// MQTT laeuft ueber TLS auf Port 8883
+	// MQTT runs over TLS on port 8883
 	opts.AddBroker(fmt.Sprintf("ssl://%s:8883", p.IP))
 
-	// Der Drucker verlangt eine bestimmte Client-ID-Format
-	// STABILE Client-ID (ohne Zeitstempel): der Drucker erlaubt nur EINE lokale
-	// MQTT-Verbindung. Mit wechselnder ID kann eine neue Verbindung eine
-	// hängengebliebene alte nicht übernehmen — der Platz bleibt von einem „Zombie"
-	// belegt und der Drucker bleibt offline. Mit fester ID kickt der Broker beim
-	// erneuten CONNECT die alte Sitzung automatisch weg (MQTT-Standard), und der
-	// Reconnect greift zuverlässig.
+	// The printer requires a specific client-ID format
+	// STABLE client ID (no timestamp): the printer allows only ONE local
+	// MQTT connection. With a changing ID a new connection cannot take over a
+	// stuck old one — the slot stays occupied by a "zombie"
+	// and the printer stays offline. With a fixed ID the broker kicks the
+	// old session automatically on reconnect (MQTT standard), and the
+	// reconnect works reliably.
 	opts.SetClientID("druckerfarm-" + p.Serial)
 	opts.SetUsername("bblp")
 	opts.SetPassword(p.Code)
 
-	// Der Drucker nutzt ein selbstsigniertes Zertifikat
+	// The printer uses a self-signed certificate
 	opts.SetTLSConfig(&tls.Config{
 		InsecureSkipVerify: true,
 	})
@@ -262,10 +278,10 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 		log.Printf("MQTT msg from %s (%d bytes)\nPAYLOAD: %s\n", ip, len(payload), string(payload))
 	}
 
-	// Antwortet der Drucker auf einen Steuerbefehl, wartet dort jemand darauf.
-	pruefeQuittung(ip, payload)
+	// If the printer replies to a control command, someone is waiting for it.
+	checkAck(ip, payload)
 
-	// Die Baugruppenliste kommt nur auf Nachfrage und in einer eigenen Huelle.
+	// The module list comes only on request and in its own envelope.
 	if info, ok := parseVersionReport(payload); ok {
 		m.mu.Lock()
 		if st, vorhanden := m.statuses[ip]; vorhanden {
@@ -276,7 +292,7 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 		return
 	}
 
-	// Der Drucker verpackt den Status in {"print": {...}}
+	// The printer wraps the status in {"print": {...}}
 	var wrapper struct {
 		Print json.RawMessage `json:"print"`
 	}
@@ -352,27 +368,27 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 	s.Online = true
 	s.LastSeen = time.Now()
 
-	// Der Drucker schickt Teil-Updates: ein fehlender Schluessel heisst "unveraendert",
-	// ein vorhandener mit Wert 0 heisst wirklich 0. Frueher stand hier ueberall
-	// "> 0" — ein Drucker bei 0 % bekam damit nie einen Fortschritt gesetzt und
-	// behielt stattdessen den Wert des vorigen Auftrags.
+	// The printer sends partial updates: a missing key means "unchanged",
+	// a present one with value 0 means really 0. Previously everything here said
+	// "> 0" — a printer at 0 % thus never got a progress set and
+	// kept the value of the previous job instead.
 	has := func(key string) bool { _, ok := raw2[key]; return ok }
 
 	if has("gcode_state") {
 		prev := strings.ToUpper(s.GcodeState)
 		next := strings.ToUpper(getString("gcode_state"))
 		s.GcodeState = getString("gcode_state")
-		// Wechselt der Drucker von Pause oder Fehler zurueck auf Laufen, gilt die
-		// Stoerung als quittiert. Ohne das haengen alte HMS-Meldungen ewig im
-		// Speicher — der Drucker schickt das Feld naemlich nicht bei jeder
-		// Nachricht mit, und dann blinkt das Licht endlos weiter.
+		// When the printer switches from pause or error back to running, the
+		// fault counts as acknowledged. Without this old HMS messages hang forever in
+		// memory — the printer does not send the field with every
+		// message, and then the light keeps blinking endlessly.
 		if next == "RUNNING" && prev != "RUNNING" && prev != "" {
 			if len(s.HmsErrors) > 0 || s.PrintError > 0 {
 				log.Printf("MQTT %s: Druck laeuft wieder — alte Stoerungsmeldungen verworfen", ip)
 			}
-			// Was jetzt noch ansteht, gilt als quittiert. Kommt es gleich per
-			// pushall wieder herein, loest es kein Blinken mehr aus. Etwas
-			// wirklich Neues waehrend des Drucks aber sehr wohl.
+			// Whatever is still pending now counts as acknowledged. If it comes right back via
+			// pushall, it no longer triggers blinking. Something
+			// truly new during the print does, though.
 			s.AckedHms = map[string]bool{}
 			for _, e := range s.HmsErrors {
 				s.AckedHms[e] = true
@@ -381,8 +397,8 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 			s.PrintError = 0
 		}
 		if next != "RUNNING" && prev == "RUNNING" {
-			// Druck vorbei: das Gedaechtnis wird geleert, sonst bliebe eine
-			// alte Meldung fuer alle Zeiten stumm.
+			// Print over: the memory is cleared, otherwise an
+			// old message would stay muted forever.
 			s.AckedHms = nil
 		}
 	}
@@ -400,6 +416,10 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 	}
 	if has("subtask_name") {
 		s.SubtaskName = getString("subtask_name")
+	}
+	// Some models/firmwares report the name only in gcode_file (full path).
+	if has("gcode_file") {
+		s.GcodeFile = getString("gcode_file")
 	}
 	if has("nozzle_temper") {
 		s.NozzleTemp = getFloat("nozzle_temper")
@@ -423,7 +443,7 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 		s.PrintError = getInt("print_error")
 	}
 
-	// AMS — nur ersetzen, wenn die Nachricht wirklich AMS-Daten enthaelt
+	// AMS — only replace when the message actually contains AMS data
 	if units, trayNow, ok := parseAMS(raw2); ok {
 		s.AMS = units
 		s.TrayNow = trayNow
@@ -434,9 +454,9 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 		}
 	}
 
-	// Firmware-Stand: der Drucker legt in upgrade_state ab, ob und welche
-	// Baugruppe ein Update offen hat. Kommt der Block mit, gilt er als
-	// massgeblich — auch eine leere Liste heisst dann "nichts offen".
+	// Firmware level: the printer stores in upgrade_state whether and which
+	// module has an update pending. If the block is present, it is
+	// authoritative — even an empty list then means "nothing pending".
 	if usRaw, ok := raw2["upgrade_state"]; ok {
 		s.Upgrade = parseUpgradeState(usRaw)
 		if b, err := json.MarshalIndent(usRaw, "", "  "); err == nil {
@@ -454,6 +474,36 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 						s.HmsErrors = append(s.HmsErrors, e)
 					}
 				}
+			}
+		}
+	}
+
+	// xcam: AI/camera monitoring (if the printer reports it).
+	if xcamRaw, ok := raw2["xcam"].(map[string]interface{}); ok {
+		s.Xcam = xcamRaw
+		truthy := func(v interface{}) bool {
+			switch x := v.(type) {
+			case bool:
+				return x
+			case string:
+				u := strings.ToLower(strings.TrimSpace(x))
+				return u == "on" || u == "enable" || u == "enabled" || u == "1" || u == "true"
+			case float64:
+				return x != 0
+			}
+			return false
+		}
+		s.AiMonitoring = truthy(xcamRaw["printing_monitor"]) || truthy(xcamRaw["spaghetti_detector"]) ||
+			truthy(xcamRaw["first_layer_inspector"]) || truthy(xcamRaw["buildplate_marker_detector"])
+	}
+
+	// ipcam.timelapse: timelapse on/off as the printer reports it itself.
+	if ipcamRaw, ok := raw2["ipcam"].(map[string]interface{}); ok {
+		if tl, ok := ipcamRaw["timelapse"].(string); ok {
+			u := strings.ToLower(strings.TrimSpace(tl))
+			if u != "" {
+				s.Timelapse = u
+				s.TimelapseKnown = true
 			}
 		}
 	}
@@ -553,12 +603,12 @@ func (m *MQTTManager) SetCameraResolution(printers []Printer, resolution string)
 		if p.Serial == "" {
 			continue
 		}
-		// Die neue Generation (H2/X2/P2) kennt das alte 720p/1080p-Umschalten
-		// per ipcam_resolution_set nicht. Schickt man es trotzdem, kann der
-		// Drucker seine Kamera/Liveview abschalten (X2D „geht von selbst wieder
-		// aus"). Deshalb wird der Befehl für diese Modelle NICHT gesendet — der
-		// Livestream läuft unabhängig davon weiter.
-		if neueKameraGeneration(p.Model) {
+		// The new generation (H2/X2/P2) does not know the old 720p/1080p switching
+		// via ipcam_resolution_set. If sent anyway, the
+		// printer may turn off its camera/liveview (X2D "goes off again by
+		// itself"). So the command is NOT sent for these models — the
+		// livestream keeps running independently.
+		if newCameraGeneration(p.Model) {
 			continue
 		}
 		client, ok := m.clients[p.IP]
@@ -576,6 +626,35 @@ func (m *MQTTManager) SetCameraResolution(printers []Printer, resolution string)
 	return sent
 }
 
+// SetTimelapse turns a printer's timelapse recording on or off.
+// Bambu accepts this via the same "camera" command as switching
+// the resolution (ipcam_timelapse, control enable/disable). Returns true when
+// the command was sent.
+func (m *MQTTManager) SetTimelapse(p Printer, on bool) error {
+	if p.Serial == "" {
+		return fmt.Errorf("%s: keine Seriennummer", p.IP)
+	}
+	ctrl := "disable"
+	if on {
+		ctrl = "enable"
+	}
+	payload := fmt.Sprintf(`{"camera":{"sequence_id":"0","command":"ipcam_timelapse","control":"%s"}}`, ctrl)
+	m.mu.RLock()
+	client, ok := m.clients[p.IP]
+	m.mu.RUnlock()
+	if !ok || !client.IsConnected() {
+		return fmt.Errorf("%s: nicht verbunden", p.IP)
+	}
+	topic := fmt.Sprintf("device/%s/request", p.Serial)
+	tok := client.Publish(topic, 1, false, payload)
+	tok.Wait()
+	if tok.Error() != nil {
+		return tok.Error()
+	}
+	log.Printf("TIMELAPSE %s -> %s\n", p.IP, ctrl)
+	return nil
+}
+
 // ─── AMS ──────────────────────────────────────────────────────────────────────
 
 func asString(v interface{}) string {
@@ -588,8 +667,8 @@ func asString(v interface{}) string {
 	return ""
 }
 
-// parseTray liest ein einzelnes Fach. Leere Faecher liefert es mit leerem Typ
-// zurueck, damit die Oberflaeche "leer" von "nicht vorhanden" unterscheiden kann.
+// parseTray reads a single tray. Empty trays are returned with an empty type
+// so the UI can distinguish "empty" from "not present".
 func parseTray(v interface{}) (AMSTray, bool) {
 	m, ok := v.(map[string]interface{})
 	if !ok {
@@ -606,7 +685,7 @@ func parseTray(v interface{}) (AMSTray, bool) {
 		t.Remain = int(r)
 	}
 	// "cols" listet bei mehrfarbigem Filament alle Farben auf. Werkseigene
-	// Rollen fuellen es immer, Fremdfilament haeufig nur mit einem Eintrag.
+	// factory spools always fill it, third-party filament often with only one entry.
 	if cols, ok := m["cols"].([]interface{}); ok {
 		for _, c := range cols {
 			if hex := strings.ToUpper(strings.TrimSpace(asString(c))); hex != "" && hex != "00000000" {
@@ -617,16 +696,16 @@ func parseTray(v interface{}) (AMSTray, bool) {
 	if t.Color == "" && len(t.Colors) > 0 {
 		t.Color = t.Colors[0]
 	}
-	// "00000000" ist die Farbe eines leeren Fachs — als unbekannt behandeln
+	// "00000000" is the color of an empty tray — treat as unknown
 	if t.Color == "00000000" {
 		t.Color = ""
 	}
 	return t, true
 }
 
-// parseAMS zieht die AMS-Einheiten aus einer Statusnachricht. Das dritte
-// Rueckgabefeld sagt, ob die Nachricht ueberhaupt AMS-Daten enthielt — der
-// Drucker schickt sie nur gelegentlich mit.
+// parseAMS extracts the AMS units from a status message. The third
+// return value says whether the message contained any AMS data at all — the
+// printer only includes them occasionally.
 func parseAMS(raw map[string]interface{}) ([]AMSUnit, string, bool) {
 	outer, ok := raw["ams"].(map[string]interface{})
 	if !ok {
@@ -663,19 +742,19 @@ func parseAMS(raw map[string]interface{}) ([]AMSUnit, string, bool) {
 
 // ─── KOMMANDOS ────────────────────────────────────────────────────────────────
 
-// Das Feld "param" gehoert laut Protokoll zwingend dazu, auch wenn es immer
-// leer bleibt. Ohne das Feld nimmt der Drucker den Befehl entgegen und tut
-// nichts — genau das Verhalten, das gemeldet wurde: kein Fehler, keine Wirkung.
-// Das Feld "param" gehoert laut Protokoll zwingend dazu, auch wenn es immer
-// leer bleibt. Die sequence_id wird je Befehl vergeben, damit die Antwort des
-// Druckers eindeutig zugeordnet werden kann.
+// The "param" field is mandatory per protocol, even though it always
+// stays empty. Without the field the printer accepts the command and does
+// nothing — exactly the reported behaviour: no error, no effect.
+// The "param" field is mandatory per protocol, even though it always
+// stays empty. The sequence_id is assigned per command so the printer's reply
+// can be matched unambiguously.
 var printCommands = map[string]string{
 	"pause":  `{"print":{"sequence_id":"%s","command":"pause","param":""}}`,
 	"resume": `{"print":{"sequence_id":"%s","command":"resume","param":""}}`,
 	"stop":   `{"print":{"sequence_id":"%s","command":"stop","param":""}}`,
 }
 
-// SendPrintCommand schickt pause/resume/stop an einen Drucker.
+// SendPrintCommand sends pause/resume/stop to a printer.
 func (m *MQTTManager) SendPrintCommand(p Printer, cmd string) error {
 	vorlage, ok := printCommands[cmd]
 	if !ok {
@@ -692,12 +771,12 @@ func (m *MQTTManager) SendPrintCommand(p Printer, cmd string) error {
 		return fmt.Errorf("%s: keine MQTT-Verbindung", p.IP)
 	}
 
-	seq := naechsteSeq()
+	seq := nextSeq()
 	payload := fmt.Sprintf(vorlage, seq)
 
-	// Erst zuhoeren, dann senden — sonst kann die Antwort schneller da sein
-	// als der Warteplatz.
-	warten := warteAufQuittung(p.IP, cmd, seq)
+	// Listen first, then send — otherwise the reply may arrive faster
+	// than the waiting slot.
+	warten := waitForAck(p.IP, cmd, seq)
 
 	tok := client.Publish(fmt.Sprintf("device/%s/request", p.Serial), 1, false, payload)
 	if !tok.WaitTimeout(5 * time.Second) {
@@ -707,23 +786,23 @@ func (m *MQTTManager) SendPrintCommand(p Printer, cmd string) error {
 		return fmt.Errorf("%s: %v", p.IP, err)
 	}
 
-	// Auf die Quittung warten. Ohne sie wissen wir nur, dass die Nachricht
-	// abgeschickt wurde — nicht, dass sie ausgefuehrt wird.
-	var antwort cmdAntwort
+	// Wait for the acknowledgement. Without it we only know the message
+	// was sent — not that it is executed.
+	var antwort cmdResponse
 	angekommen := false
 	select {
 	case antwort = <-warten:
 		angekommen = true
-	case <-time.After(cmdWartezeit):
+	case <-time.After(cmdTimeout):
 	}
-	if err := deuteQuittung(antwort, angekommen); err != nil {
+	if err := interpretAck(antwort, angekommen); err != nil {
 		log.Printf("PRINT %s -> %s FEHLGESCHLAGEN: %v", p.IP, cmd, err)
 		return fmt.Errorf("%s: %v", p.Name, err)
 	}
 	log.Printf("PRINT %s -> %s bestaetigt\n", p.IP, cmd)
 
-	// Direkt danach den vollen Status anfordern, damit die Oberflaeche nicht
-	// bis zum naechsten Turnus auf der alten Anzeige sitzen bleibt.
+	// Request full status right after, so the UI does not
+	// sit on the old display until the next cycle.
 	go func() {
 		time.Sleep(700 * time.Millisecond)
 		m.RequestStatus(p)
@@ -731,8 +810,8 @@ func (m *MQTTManager) SendPrintCommand(p Printer, cmd string) error {
 	return nil
 }
 
-// SendRaw schickt eine fertige Nachricht und wartet wie bei den anderen
-// Befehlen auf die Quittung des Druckers.
+// SendRaw sends a ready message and waits, as with the other
+// commands, for the printer's acknowledgement.
 func (m *MQTTManager) SendRaw(p Printer, command, seq, payload string) error {
 	if p.Serial == "" {
 		return fmt.Errorf("%s: keine Seriennummer hinterlegt", p.IP)
@@ -744,7 +823,7 @@ func (m *MQTTManager) SendRaw(p Printer, command, seq, payload string) error {
 		return fmt.Errorf("%s: keine MQTT-Verbindung", p.IP)
 	}
 
-	warten := warteAufQuittung(p.IP, command, seq)
+	warten := waitForAck(p.IP, command, seq)
 	tok := client.Publish(fmt.Sprintf("device/%s/request", p.Serial), 1, false, payload)
 	if !tok.WaitTimeout(5 * time.Second) {
 		return fmt.Errorf("%s: Zeitueberschreitung beim Senden", p.IP)
@@ -753,14 +832,14 @@ func (m *MQTTManager) SendRaw(p Printer, command, seq, payload string) error {
 		return fmt.Errorf("%s: %v", p.IP, err)
 	}
 
-	var antwort cmdAntwort
+	var antwort cmdResponse
 	angekommen := false
 	select {
 	case antwort = <-warten:
 		angekommen = true
-	case <-time.After(cmdWartezeit):
+	case <-time.After(cmdTimeout):
 	}
-	if err := deuteQuittung(antwort, angekommen); err != nil {
+	if err := interpretAck(antwort, angekommen); err != nil {
 		log.Printf("PRINT %s -> %s FEHLGESCHLAGEN: %v", p.IP, command, err)
 		return fmt.Errorf("%s: %v", p.Name, err)
 	}
@@ -768,7 +847,7 @@ func (m *MQTTManager) SendRaw(p Printer, command, seq, payload string) error {
 	return nil
 }
 
-// RequestStatus fordert einen vollstaendigen Statusbericht an (pushall).
+// RequestStatus requests a full status report (pushall).
 func (m *MQTTManager) RequestStatus(p Printer) bool {
 	if p.Serial == "" {
 		return false
@@ -784,9 +863,9 @@ func (m *MQTTManager) RequestStatus(p Printer) bool {
 	return tok.WaitTimeout(3*time.Second) && tok.Error() == nil
 }
 
-// PublishRaw sendet eine fertige Nachricht und meldet nur, ob das Verschicken
-// geklappt hat — es wartet NICHT auf eine Quittung. Fuer Befehle wie das
-// Anstossen eines Firmware-Updates, deren Antwortkanal nicht sicher bekannt ist.
+// PublishRaw sends a ready message and only reports whether sending
+// succeeded — it does NOT wait for an acknowledgement. For commands like
+// triggering a firmware update, whose reply channel is not reliably known.
 func (m *MQTTManager) PublishRaw(p Printer, payload string) error {
 	if p.Serial == "" {
 		return fmt.Errorf("%s: keine Seriennummer hinterlegt", p.IP)
@@ -804,7 +883,7 @@ func (m *MQTTManager) PublishRaw(p Printer, payload string) error {
 	return nil
 }
 
-// IsConnected sagt, ob fuer diese IP eine lebende MQTT-Verbindung besteht.
+// IsConnected reports whether a live MQTT connection exists for this IP.
 func (m *MQTTManager) IsConnected(ip string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -812,10 +891,10 @@ func (m *MQTTManager) IsConnected(ip string) bool {
 	return ok && c.IsConnected()
 }
 
-// syncMQTT gleicht die offenen Verbindungen mit der Druckerliste ab: neue
-// Drucker werden verbunden, entfernte getrennt. Frueher lief connectAllMQTT nur
-// einmal beim Start — ein neu angelegter Drucker blieb deshalb bis zum Neustart
-// der App ohne jeden Status.
+// syncMQTT reconciles the open connections with the printer list: new
+// printers are connected, removed ones disconnected. Previously connectAllMQTT ran only
+// once at start — a newly added printer therefore stayed without any status
+// until the app restarted.
 func syncMQTT() {
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -857,13 +936,13 @@ func (m *MQTTManager) clientIPs() []string {
 	return ips
 }
 
-// pushAllLoop fordert regelmaessig den vollen Status an. Ohne das bleibt ein
-// Drucker, dessen erste Antwort verloren ging, dauerhaft ohne Daten.
+// pushAllLoop requests the full status regularly. Without it a
+// printer whose first reply was lost stays without data permanently.
 func pushAllLoop() {
 	runde := 0
 	for {
 		time.Sleep(45 * time.Second)
-		if netzPausiert() {
+		if netPaused() {
 			continue
 		}
 		mu.Lock()
@@ -873,8 +952,8 @@ func pushAllLoop() {
 		runde++
 		for _, p := range printers {
 			mqttMgr.RequestStatus(p)
-			// Die Baugruppenliste aendert sich fast nie — einmal beim ersten
-			// Durchgang und danach etwa stuendlich genuegt vollauf.
+			// The module list almost never changes — once on the first
+			// pass and then about hourly is plenty.
 			s := mqttMgr.GetStatus(p.IP)
 			if s != nil && s.Online && (s.Info == nil || runde%80 == 0) {
 				mqttMgr.RequestVersion(p)
@@ -885,10 +964,10 @@ func pushAllLoop() {
 
 // ─── KAMMERBELEUCHTUNG ────────────────────────────────────────────────────────
 //
-// X1E und X2D haben keine eigene Signalleuchte. Damit ein Fehler in einer Halle
-// mit 42 Geraeten auffaellt, wird bei diesen Modellen die Kammerbeleuchtung zum
-// Blinken gebracht. Der Drucker kann das selbst ("flashing" mit eigenen Zeiten),
-// deshalb wird nicht im Sekundentakt gefunkt, sondern nur alle 20 s aufgefrischt.
+// X1E and X2D have no signal light of their own. So an error in a hall
+// with 42 devices stands out, the chamber light of these models is made to
+// blink. The printer can do this itself ("flashing" with its own timings),
+// so it is not sent every second but only refreshed every 20 s.
 
 var defaultBlinkModels = []string{"X1E", "X2D"}
 
@@ -908,8 +987,24 @@ func blinkModels() map[string]bool {
 	return out
 }
 
-// SetChamberLight schaltet die Kammerbeleuchtung. mode ist "on", "off" oder
-// "flashing"; die Zeiten gelten nur fuer "flashing".
+// SetChamberLight switches the chamber light. mode is "on", "off" or
+// "flashing"; the timings apply only to "flashing".
+// SetXcam toggles the built-in AI/camera monitoring (printing_monitor) on
+// or off and sets the abort sensitivity. Best-effort — depending on model
+// and firmware it varies; the printer ignores unknown fields.
+func (m *MQTTManager) SetXcam(p Printer, monitoring bool, sensitivity string) error {
+	ctrl := "false"
+	if monitoring {
+		ctrl = "true"
+	}
+	sens := sensitivity
+	if sens == "" {
+		sens = "medium"
+	}
+	payload := fmt.Sprintf(`{"xcam":{"sequence_id":"0","command":"xcam_control_set","module_name":"printing_monitor","control":%s,"print_halt":true,"halt_print_sensitivity":"%s"}}`, ctrl, sens)
+	return m.PublishRaw(p, payload)
+}
+
 func (m *MQTTManager) SetChamberLight(p Printer, mode string, onMS, offMS int) error {
 	if p.Serial == "" {
 		return fmt.Errorf("%s: keine Seriennummer", p.IP)
@@ -931,8 +1026,8 @@ func (m *MQTTManager) SetChamberLight(p Printer, mode string, onMS, offMS int) e
 	return tok.Error()
 }
 
-// printerHasError sagt, ob ein Drucker gerade einen Fehler meldet.
-// openHms zaehlt die Stoerungsmeldungen, die noch nicht als quittiert gelten.
+// printerHasError reports whether a printer is currently reporting an error.
+// openHms counts the fault messages not yet considered acknowledged.
 func openHms(s *PrinterStatus) int {
 	n := 0
 	for _, e := range s.HmsErrors {
@@ -950,11 +1045,11 @@ func printerHasError(s *PrinterStatus) bool {
 	return s.PrintError > 0 || openHms(s) > 0 || strings.EqualFold(s.GcodeState, "FAILED")
 }
 
-// printerWantsBlink entscheidet, ob die Kammer blinken soll. Geblinkt wird bei
+// printerWantsBlink decides whether the chamber should blink. Blinking happens on
 // einer Stoerung ODER im Pausezustand. Ein fertiger Druck (FINISH) blinkt
-// ausdruecklich NIE — auch dann nicht, wenn zum Abschluss noch eine Meldung
-// ansteht. So signalisiert das Blinken nur, was wirklich Aufmerksamkeit
-// braucht: Fehler und angehaltene Drucke.
+// explicitly NEVER — not even when a message is still pending at the end.
+// So the blinking signals only what truly needs attention:
+// errors and paused prints.
 func printerWantsBlink(s *PrinterStatus) bool {
 	if s == nil || !s.Online {
 		return false
@@ -968,12 +1063,12 @@ func printerWantsBlink(s *PrinterStatus) bool {
 	return printerHasError(s)
 }
 
-// errorLightLoop haelt das Blinken aufrecht, solange ein Fehler ansteht, und
-// stellt die Beleuchtung genau einmal zurueck, wenn er weg ist.
+// errorLightLoop keeps the blinking going while an error is pending, and
+// resets the light exactly once when it is gone.
 func errorLightLoop() {
-	// Wer beim letzten Lauf geblinkt hat, steht in der Konfiguration. Sonst
-	// wuesste die App nach einem Neustart nichts davon und das Licht bliebe
-	// fuer immer im Blinkmodus.
+	// Which ones blinked last run is in the configuration. Otherwise
+	// the app would not know after a restart and the light would stay
+	// in blink mode forever.
 	blinking := map[string]bool{}
 	lastSent := map[string]time.Time{}
 	mu.Lock()
@@ -1007,12 +1102,12 @@ func errorLightLoop() {
 		}
 	}
 
-	// Alle fuenf Sekunden nachsehen. Zwanzig waren zu traege: nach dem
-	// Fortsetzen eines Drucks blinkte die Kammer noch fast eine halbe Minute
-	// weiter, was wie ein neuer Fehler aussah.
+	// Check every five seconds. Twenty was too sluggish: after
+	// resuming a print the chamber kept blinking for nearly half a minute
+	// more, which looked like a new error.
 	for {
 		time.Sleep(5 * time.Second)
-		if netzPausiert() {
+		if netPaused() {
 			continue
 		}
 
@@ -1031,12 +1126,12 @@ func errorLightLoop() {
 
 			switch {
 			case wants:
-				// Haeufig pruefen, selten senden. Der 5-Sekunden-Takt aus 1.5.0
-				// hat die Befehle an die Drucker vervierfacht, ohne dass es
-				// dafuer einen Grund gab: das Auffrischen dient nur dazu, einen
-				// Neustart des Druckers zu ueberstehen, und dafuer reicht eine
-				// Minute. Neu auftretende Stoerungen werden weiterhin binnen
-				// fuenf Sekunden bemerkt.
+				// Check often, send rarely. The 5-second cadence from 1.5.0
+				// quadrupled the commands to the printers without any
+				// reason: the refresh only serves to survive a
+				// printer restart, and a minute is enough for that.
+				// Newly occurring faults are still noticed within
+				// five seconds.
 				if blinking[p.IP] && time.Since(lastSent[p.IP]) < time.Minute {
 					continue
 				}
@@ -1046,8 +1141,8 @@ func errorLightLoop() {
 				lastSent[p.IP] = time.Now()
 				blinking[p.IP] = true
 			case blinking[p.IP]:
-				// Zurueck auf normales Licht. Klappt es nicht, bleibt der Eintrag
-				// stehen und es wird beim naechsten Durchgang erneut versucht.
+				// Back to normal light. If it fails, the entry stays
+				// and it is retried on the next pass.
 				if err := mqttMgr.SetChamberLight(p, "on", 500, 500); err == nil {
 					delete(blinking, p.IP)
 					delete(lastSent, p.IP)
@@ -1060,8 +1155,8 @@ func errorLightLoop() {
 }
 
 // ResetChamberLights stellt bei allen betroffenen Druckern normales Licht her.
-// Wird vom Schalter in den Einstellungen benutzt, wenn die Sonderbeleuchtung
-// abgeschaltet wird.
+// Used by the switch in the settings when the special lighting
+// is turned off.
 func ResetChamberLights() int {
 	mu.Lock()
 	printers := make([]Printer, len(state.Printers))
@@ -1088,20 +1183,20 @@ func ResetChamberLights() int {
 	return n
 }
 
-// neueKameraGeneration erkennt die H2-/X2-/P2-Reihe (H2D, H2S, X2D, P2S …). Diese
-// Geräte haben eine andere Kamera und unterstützen das alte
-// ipcam_resolution_set (720p/1080p) nicht.
-func neueKameraGeneration(model string) bool {
+// newCameraGeneration detects the H2/X2/P2 series (H2D, H2S, X2D, P2S …). These
+// devices have a different camera and do not support the old
+// ipcam_resolution_set (720p/1080p).
+func newCameraGeneration(model string) bool {
 	m := strings.ToUpper(strings.TrimSpace(model))
 	return strings.HasPrefix(m, "H2") || strings.HasPrefix(m, "X2") || strings.HasPrefix(m, "P2")
 }
 
-// reconnectLoop hält offline Drucker im Blick und verbindet sie neu, sobald sie
-// wieder erreichbar sind. Nötig, weil paho AutoReconnect NUR nach einer einmal
-// geglückten Verbindung greift: War der Drucker beim ersten Versuch aus, würde
-// er ohne diesen Takt für immer offline bleiben. Alle 30 s wird für jeden
-// Drucker mit Seriennummer geprüft, ob eine lebende MQTT-Verbindung besteht;
-// wenn nicht, wird die alte (hängende) getrennt und frisch aufgebaut.
+// reconnectLoop keeps an eye on offline printers and reconnects them once they
+// are reachable again. Needed because paho AutoReconnect only kicks in after a
+// once-successful connection: if the printer was off on the first try, it would
+// stay offline forever without this cadence. Every 30 s each
+// printer with a serial is checked for a live MQTT connection;
+// if not, the old (stuck) one is dropped and freshly established.
 func reconnectLoop() {
 	for {
 		time.Sleep(30 * time.Second)
@@ -1109,9 +1204,9 @@ func reconnectLoop() {
 	}
 }
 
-// reconnectDurchlauf ist ein einzelner Prüf-Durchlauf (getrennt für Tests).
+// reconnectDurchlauf is a single check pass (separated for tests).
 func reconnectDurchlauf() {
-	if netzPausiert() {
+	if netPaused() {
 		return
 	}
 	mu.Lock()
