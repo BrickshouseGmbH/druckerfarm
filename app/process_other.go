@@ -48,6 +48,13 @@ func killAllGo2rtc() (int, error) {
 
 // killGo2rtcTree terminates the go2rtc process. On non-Windows systems (test
 // only) a simple kill is enough.
+// killOrphanGo2rtcFfmpeg removes orphaned go2rtc camera ffmpeg processes (RTSP
+// input) while sparing the YouTube push (RTMP). See the Windows version.
+func killOrphanGo2rtcFfmpeg() int {
+	_ = exec.Command("pkill", "-9", "-f", "ffmpeg.*rtsp").Run()
+	return 0
+}
+
 func killGo2rtcTree(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return

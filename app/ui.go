@@ -56,7 +56,20 @@ header{display:flex;align-items:center;background:var(--s1);border-bottom:1px so
 .logo-mark{width:28px;height:28px;background:var(--accent);border-radius:4px;display:grid;place-items:center;font-size:14px;flex-shrink:0;}
 .logo h1{font-size:13px;font-weight:800;letter-spacing:-0.3px;line-height:1.2;}
 .logo h1 span{color:var(--accent);}
-.header-tabs{display:flex;height:100%;flex:1;overflow:hidden;}
+.header-tabs{display:flex;height:100%;flex:0 0 auto;overflow:hidden;}
+.header-search{display:flex;align-items:center;gap:6px;flex:0 1 420px;max-width:420px;}
+.header-search .hs-icon{opacity:.55;font-size:13px;}
+.header-search .search-input{max-width:none;}
+.header-search.searching{outline:1px solid var(--accent);border-radius:6px;}
+.header-search.searching .hs-icon{opacity:1;color:var(--accent);}
+.header-search.searching .search-input{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}
+.hs-clear{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 4px;flex:0 0 auto;}
+.hs-clear:hover{color:var(--text,#fff);}
+.modal-list-search{flex:1 1 auto;max-width:none;width:100%;margin-bottom:6px;}
+.modal-list-search .search-input{flex:1 1 auto;max-width:none;}
+.upr-empty{padding:18px 12px;text-align:center;color:var(--muted);font-size:13px;}
+.search-active-hint{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 10px;padding:6px 12px;border-radius:7px;background:color-mix(in srgb,var(--accent) 16%,transparent);border:1px solid var(--accent);color:var(--text);font-size:13px;}
+.search-active-hint button{margin-left:auto;}
 .tab{padding:0 15px;height:100%;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;border-right:1px solid var(--border);transition:all 0.15s;white-space:nowrap;}
 .tab:hover{color:var(--text);background:var(--s2);}
 .tab.active{color:var(--accent);background:var(--adim);border-bottom:2px solid var(--accent);}
@@ -84,6 +97,11 @@ main{padding:10px 10px 40px;}
 .view{display:none;}.view.active{display:block;}
 .top-bar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:unset;margin-bottom:0;padding:8px 10px;background:var(--seg-bg);}
 .stat-pill{background:var(--s1);border:1px solid var(--border);border-radius:5px;padding:6px 13px;display:flex;align-items:center;gap:8px;cursor:pointer;transition:all 0.15s;user-select:none;}
+/* Model pills (H2C, H2D, X1E, …) are a printer, not a state — show them darker
+   and with a colored accent so they read differently from the state pills. */
+#model-pills .stat-pill{background:var(--s3);border-color:var(--border2);border-left:3px solid var(--mc,var(--muted));}
+#model-pills .stat-pill .sl{color:var(--text);font-weight:700;}
+#model-pills .stat-pill.active-model{background:var(--adim);border-color:var(--accent);}
 .stat-pill:hover{border-color:var(--border2);}
 .jp-result{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.6;}
 .ai-out{margin-top:6px;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.55;white-space:pre-wrap;}
@@ -157,7 +175,7 @@ body:not(.role-admin) #tab-import{display:none;}
 .sv-gold{color:var(--gold);}
 .sv-amber{color:#e0a020;}
 .stream-count{font-family:ui-monospace,Consolas,monospace;font-size:10px;color:var(--muted);margin-left:auto;}
-#printerGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;align-items:start;}
+#printerGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;align-items:stretch;}
 .tile{background:var(--s1);border:1px solid var(--border);border-radius:6px;overflow:visible;display:flex;flex-direction:column;min-width:0;transition:border-color 0.2s,box-shadow 0.2s;animation:fadeIn 0.25s ease both;}
 @keyframes fadeIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
 .tile:hover{border-color:var(--border2);box-shadow:0 2px 14px rgba(0,0,0,0.5);}
@@ -368,7 +386,26 @@ select option{background:var(--s2);}
 .tt-empty{color:var(--muted);font-size:10px;}
 .dd-row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;}.dd-lbl{color:var(--muted);white-space:nowrap;font-size:10px;}.dd-val{color:var(--text);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.dd-val-failed{color:var(--red);font-weight:700;}
 .dd-preview{margin:6px 0;text-align:center;}
-.dd-preview-img{max-width:100%;max-height:160px;border-radius:6px;border:1px solid var(--border);background:#0b0f14;}.dd-sep{border-top:1px solid var(--border);margin:5px 0;}.dd-err{color:var(--red);padding:2px 0;font-size:10px;}.dd-err::before{content:"⚠ ";}.dd-none{color:var(--muted);font-size:10px;}
+.dd-preview-img{max-width:100%;max-height:160px;border-radius:6px;border:1px solid var(--border);background:#0b0f14;}
+.dd-preview-wrap{display:flex;flex-wrap:wrap;gap:8px;}
+.dd-preview-wrap.multi .dd-preview-img{max-height:120px;}
+.dd-plate{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.dd-plate-lbl{font-size:10px;color:var(--muted);font-family:ui-monospace,Consolas,monospace;}
+.dd-colors{margin-top:6px;}
+.cc-title{font-size:10px;color:var(--accent);font-weight:700;margin:2px 0;}
+.cc-grid{display:flex;flex-wrap:wrap;gap:8px;}
+.cc-col{display:flex;align-items:center;gap:3px;}
+.cc-n{font-size:9px;color:var(--muted);width:10px;text-align:right;}
+.cc-sw{width:16px;height:16px;border-radius:3px;border:1px solid var(--border);display:inline-block;}
+.cc-sw.cc-empty{background:repeating-linear-gradient(45deg,#333,#333 3px,#444 3px,#444 6px)!important;}
+.cc-vs{font-size:9px;color:var(--muted);}
+.hist-list{display:flex;flex-direction:column;gap:2px;max-height:160px;overflow-y:auto;}
+.hist-row{display:flex;gap:6px;align-items:baseline;font-size:10px;border-bottom:1px solid var(--border);padding:2px 0;}
+.hist-t{color:var(--muted);white-space:nowrap;font-family:ui-monospace,Consolas,monospace;}
+.hist-st{font-weight:700;}
+.hist-st.fail{color:var(--red);}
+.hist-code{color:var(--amber,#e0a000);flex:1;}
+.hist-f{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;}.dd-sep{border-top:1px solid var(--border);margin:5px 0;}.dd-err{color:var(--red);padding:2px 0;font-size:10px;}.dd-err::before{content:"⚠ ";}.dd-none{color:var(--muted);font-size:10px;}
 /* Edit row */
 .list-item.editing{border-color:var(--accent);background:var(--s2);}
 .list-item.editing input{background:var(--s3);border:1px solid var(--border2);border-radius:4px;color:var(--text);padding:3px 7px;font-family:ui-monospace,Consolas,monospace;font-size:11px;width:100%;}
@@ -420,8 +457,8 @@ select option{background:var(--s2);}
 
 /* Sync upload drop zone */
 .sync-filter-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-.sync-model-pill{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border2);background:var(--s2);color:var(--muted);transition:all 0.15s;font-family:ui-monospace,Consolas,monospace;}
-.sync-model-pill.active{border-color:var(--accent);background:var(--adim);color:var(--accent);}
+.sync-model-pill{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border2);background:var(--s3);color:var(--text);transition:all 0.15s;font-family:ui-monospace,Consolas,monospace;}
+.sync-model-pill.active{border-color:var(--accent);background:var(--accent);color:#001018;}
 .sd-search{padding:0 10px;}
 .sd-search:not(:empty){padding:4px 10px 8px 30px;border-bottom:1px solid var(--border);}
 .fs-hit{display:flex;gap:10px;align-items:center;padding:4px 6px;font-size:12px;border-radius:4px;}
@@ -493,10 +530,81 @@ html[data-theme="light"] .tile{background:var(--seg-bg);}
 .drop-file-rm{color:var(--muted);cursor:pointer;padding:0 4px;flex-shrink:0;}
 .drop-file-rm:hover{color:var(--red);}
 .sync-printer-list{display:flex;flex-direction:column;}
+/* One unified, collapsible printer row (Add-Printer + File-Sync) */
+.upr{border-bottom:1px solid var(--border);}
+.upr-head{display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer;position:relative;z-index:0;}
+.upr-head:hover{background-color:var(--s2,#1b1f24);}
+/* Upload "connecting" shimmer (yellow, full row) while a connection is set up. */
+.upr-head.up-connect::before{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,transparent 0%,rgba(240,190,20,.38) 50%,transparent 100%);background-size:200% 100%;animation:uprShimmer 1.1s linear infinite;}
+@keyframes uprShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* Thin print-progress bar (like the grid video tile). */
+.upr-pbar{display:none;width:56px;height:6px;background:var(--border2);border-radius:3px;overflow:hidden;flex:0 0 auto;margin-left:6px;}
+.upr-pbar.on{display:inline-block;}
+.upr-pbar>i{display:block;height:100%;width:0;border-radius:3px;background:var(--green);transition:width .5s;}
+.upr-pbar>i.pause{background:var(--gold);}
+.upr-pbar>i.failed{background:var(--red);}
+/* the global input{width:100%} would stretch the checkbox and blow the row apart */
+.upr-head .sync-cb{width:15px;height:15px;flex:0 0 auto;margin:0;padding:0;accent-color:var(--accent);}
+.upr-head .mdot{flex:0 0 auto;}
+.upr-head .mono-xs{flex:0 0 auto;color:var(--muted);}
+.upr-head .sd-file-count,.upr-head .sd-hitcount{flex:0 0 auto;}
+.upr-chev{color:var(--muted);font-size:11px;flex-shrink:0;width:12px;transition:transform .15s;}
+.upr.open .upr-chev{transform:rotate(90deg);}
+.upr-name{font-weight:600;flex:0 0 auto;min-width:60px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.upr-meta{color:var(--muted);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.upr-meta .code-mask{cursor:pointer;border-bottom:1px dotted var(--border2);}
+/* margin-left:auto pushes the status + pills + model group to the right edge so
+   the row uses the full width instead of leaving the right half empty. */
+.upr-status{font-size:10px;font-weight:700;color:var(--text);font-family:ui-monospace,Consolas,monospace;flex:0 0 auto;min-width:72px;text-align:right;white-space:nowrap;margin-left:auto;padding-left:12px;}
+.upr-load{flex:0 0 auto;}
+.ed-code-wrap{display:flex;align-items:center;gap:4px;}
+.ed-code-wrap .repo-input{flex:1;min-width:0;}
+.ed-eye{flex:0 0 auto;background:var(--s2,#1b1f24);border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer;font-size:13px;padding:3px 7px;}
+.ed-eye.on,.ed-eye:hover{color:var(--accent);}
+.upr-edit{flex:0 0 auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:5px;}
+.upr-edit:hover{color:var(--accent);background:var(--s2,#1b1f24);}
+.upr-body{display:none;padding:2px 10px 12px 26px;}
+.upr.open .upr-body{display:block;}
+.upr-actions{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:6px;}
+/* inline edit form inside the expanded row */
+.ed-form{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;}
+.ed-fld{display:flex;flex-direction:column;gap:2px;}
+.ed-fld label{font-size:10px;color:var(--muted);}
+.ed-fld .repo-input{min-width:110px;}
+.ed-btns{display:flex;gap:6px;align-items:flex-end;}
 .sync-printer-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;}
 .sync-printer-item:last-child{border-bottom:none;}
 .sync-printer-item input[type=checkbox]{width:auto;accent-color:var(--accent);flex-shrink:0;}
 .sync-printer-label{flex:1;}
+/* (Einfach/Experte removed) */
+body.modal-open{overflow:hidden;}
+/* Row extra info (serial / access code / IP) in the expanded printer row */
+.upr-info{display:flex;flex-wrap:wrap;gap:4px 16px;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted);margin-top:2px;}
+.upr-info b{color:var(--text);font-weight:600;}
+/* Action modal (Add Printer + Upload File in one, two tabs) */
+.amx-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;z-index:9000;padding:38px 18px;overflow:auto;}
+.amx-box{background:var(--s1,#15181c);border:1px solid var(--border);border-radius:10px;width:min(1100px,96vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 44px rgba(0,0,0,.55);}
+.amx-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border);}
+.amx-tabs{display:flex;gap:4px;}
+.amx-tab{background:var(--s2,#1b1f24);color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;}
+.amx-tab.active{background:var(--accent);color:#001018;border-color:var(--accent);}
+.amx-close{background:none;border:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:5px;}
+.amx-close:hover{color:var(--fg,#fff);background:var(--s2,#222);}
+.amx-head-btns{display:flex;align-items:center;gap:2px;}
+.amx-min{font-size:16px;}
+.amx-restore{position:fixed;right:16px;bottom:16px;z-index:60;background:var(--accent);color:#001018;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.4);}
+.amx-restore:hover{filter:brightness(1.08);}
+.amx-body{padding:14px;overflow:auto;}
+/* Add-Printer tools collapsed behind a settings expander */
+.add-settings{border:1px solid var(--border);border-radius:8px;margin:6px 0 12px;background:var(--s2,#1b1f24);}
+.add-settings>summary{cursor:pointer;padding:9px 13px;font-weight:700;font-size:13px;list-style:none;user-select:none;color:var(--text);}
+.add-settings>summary::-webkit-details-marker{display:none;}
+.add-settings>summary::before{content:'▸ ';color:var(--muted);}
+.add-settings[open]>summary::before{content:'▾ ';}
+.add-settings[open]>summary{border-bottom:1px solid var(--border);}
+.sync-name-click{cursor:pointer;}
+.sync-name-click:hover{color:var(--accent);}
+.sync-more{color:var(--accent);font-size:11px;margin-left:4px;opacity:.85;}
 .sync-upload-btn{padding:6px 16px;border-radius:4px;border:1px solid var(--green);background:var(--gdim);color:var(--green);font-size:12px;font-weight:700;cursor:pointer;transition:all 0.15s;}
 .sync-upload-btn:hover{background:var(--green);color:#000;}
 .sync-upload-btn:disabled{opacity:0.4;cursor:not-allowed;}
@@ -1052,17 +1160,26 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
   </div>
   <!-- Main nav left -->
   <div class="header-tabs">
-    <div class="tab active" id="tab-uebersicht" onclick="sv('uebersicht')">Übersicht</div>
-    <div class="tab tab-header" id="tab-sync" onclick="sv('sync')"><span id="tab-sync-lbl2">⟳ File Sync</span></div>
+    <div class="tab active" id="tab-grid" onclick="sv('grid')"><span id="tab-grid-lbl">⊞ Grid</span></div>
+    <div class="tab" id="tab-list" onclick="sv('list')"><span id="tab-list-lbl">≡ Liste</span></div>
   </div>
-  <!-- Spacer -->
+  <!-- Centered search: filters Grid and Liste alike -->
+  <div class="grow"></div>
+  <div class="header-search" id="header-search">
+    <span class="hs-icon">🔍</span>
+    <input class="search-input" id="searchInput" type="text" oninput="flt(this.value)"
+           readonly onfocus="this.removeAttribute('readonly')"
+           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+           name="df-printer-search" data-form-type="other" data-lpignore="true" data-1p-ignore="true">
+    <button class="hs-clear" id="hs-clear" style="display:none" onclick="clearSearch()" title="Leeren">✕</button>
+  </div>
   <div class="grow"></div>
   <!-- Right side -->
   <div class="header-right header-right-inner">
     <div class="tab tab-header" id="tab-jobs" onclick="sv('jobs')" title="Aufträge">⚙ Aufträge<span id="jobs-badge" class="jobs-badge" style="display:none;">0</span></div>
-    <div class="tab tab-header" onclick="sv('import')" id="tab-import">
-      <span id="tab-import-lbl">+ Drucker</span>
-    </div>
+    <!-- Add Printer and Upload File are actions, not destinations: they open in a modal -->
+    <div class="tab tab-header" id="tab-import" onclick="openActionModal('import')" title="Add Printer"><span data-i18n="addPrinter">➕ Drucker</span></div>
+    <div class="tab tab-header" id="tab-sync" onclick="openActionModal('sync')" title="Upload File"><span data-i18n="uploadFileBtn">⬆ Datei hochladen</span></div>
     <div class="tab tab-header" onclick="sv('setup')" id="tab-setup">
       <span id="netz-aus" class="netz-aus hidden" title="Netzwerkverkehr ist angehalten">🚫</span>
       <span id="setup-icon" class="setup-icon">⚙</span><span id="tab-setup-lbl">Einstellungen</span>
@@ -1076,12 +1193,55 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
 </header>
 <div id="praesenz-banner" class="praesenz-banner" style="display:none;"></div>
 
+<!-- Small non-blocking text-input dialog (replaces the browser's blocking
+     prompt(), which froze the page and made all snapshots re-fire at once). -->
+<div id="ask-modal" class="amx-overlay" style="display:none;align-items:center" onclick="if(event.target===this)askTextCancel()">
+  <div class="amx-box" style="width:min(440px,94vw)">
+    <div class="amx-head"><span id="ask-title"></span><button class="amx-close" onclick="askTextCancel()" title="Schließen">✕</button></div>
+    <div class="amx-body">
+      <input type="text" id="ask-input" class="search-input" style="width:100%;max-width:none"
+             onkeydown="if(event.key==='Enter')askTextOk();if(event.key==='Escape')askTextCancel();">
+      <div class="row-8" style="justify-content:flex-end;margin-top:12px;">
+        <button class="hbtn" onclick="askTextCancel()" data-i18n="cancel">Abbrechen</button>
+        <button class="hbtn primary" onclick="askTextOk()" data-i18n="save">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit-printer dialog (works everywhere; the old inline row editor relied on
+     the removed #ql list). Field IDs match what savePrinter() reads. -->
+<div id="editp-modal" class="amx-overlay" style="display:none;align-items:center" onclick="if(event.target===this)closeEditPrinter()">
+  <div class="amx-box" style="width:min(520px,95vw)">
+    <div class="amx-head"><span data-i18n="edit">Bearbeiten</span><button class="amx-close" onclick="closeEditPrinter()" title="Schließen">✕</button></div>
+    <div class="amx-body" id="editp-body"></div>
+  </div>
+</div>
+
+<!-- Action modal: hosts the Add-Printer / Upload-File views as an overlay so
+     they don't navigate away from the current Grid/Liste view. -->
+<div id="action-modal" class="amx-overlay" style="display:none" onclick="if(event.target===this)closeActionModal()">
+  <div class="amx-box">
+    <div class="amx-head">
+      <div class="amx-tabs">
+        <button class="amx-tab" id="amx-tab-import" onclick="switchActionTab('import')" data-i18n="addPrinter">➕ Drucker hinzufügen</button>
+        <button class="amx-tab" id="amx-tab-sync" onclick="switchActionTab('sync')" data-i18n="uploadFileBtn">⬆ Datei hochladen</button>
+      </div>
+      <span class="amx-head-btns">
+        <button class="amx-close amx-min" onclick="minimizeActionModal()" title="Minimieren (Upload läuft weiter)">▁</button>
+        <button class="amx-close" onclick="closeActionModal()" title="Schließen">✕</button>
+      </span>
+    </div>
+    <div class="amx-body" id="amx-body"></div>
+  </div>
+</div>
+<!-- Restore chip shown when the action modal is minimized (upload keeps running) -->
+<button id="amx-restore" class="amx-restore" style="display:none" onclick="restoreActionModal()"></button>
+
 <main>
 <div class="view" id="view-uebersicht">
 <!-- Sub nav: Grid / Liste + Slider -->
 <div class="sub-nav" id="sub-nav">
-  <div class="tab active tab-sub" id="tab-grid" onclick="setView('grid')"><span id="tab-grid-lbl">⊞ Grid</span></div>
-  <div class="tab tab-sub" id="tab-list" onclick="setView('list')"><span id="tab-list-lbl">≡ Liste</span></div>
   <div class="push-right"></div>
   <div class="tab tab-sub-sep" id="tab-fsc" onclick="setView('fsc')" data-i18n="fullscreen">⊡ Fullscreen</div>
   <div class="tab tab-sub-sm" id="tab-fsv" onclick="setView('fsv')" data-i18n="fullscreenVideo">⛶ Fullscreen Video Only</div>
@@ -1101,6 +1261,7 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
       <button class="sbtn res-btn sbtn-xs" id="btn-720p"  onclick="setVideoMode('720p')">720p</button>
       <button class="sbtn res-btn sbtn-xs" id="btn-1080p" onclick="setVideoMode('1080p')">1080p</button>
     </div>
+    <div class="grow"></div>
   </div>
 <div class="top-bar" id="top-bar">
     <span class="filter-label" id="lbl-filter"></span>
@@ -1114,7 +1275,12 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
     <div class="stat-pill" id="pill-favs" onclick="setPillFilter('favs')"><div class="sl" data-i18n="favs">Favoriten</div><div class="sv sv-gold" id="st-favs">0</div></div>
     <div class="stat-pill" id="pill-fertig" onclick="setPillFilter('fertig')"><div class="sl" data-i18n="pillFertig">Fertig</div><div class="sv sv-green" id="st-fertig">0</div></div>
     <span id="model-pills" class="pill-host"></span>
-    <input class="search-input" id="searchInput" oninput="flt(this.value)">
+</div>
+<!-- Shown whenever a search term is active in the overview, so filtering by a
+     different model while a term lingers doesn't look "empty for no reason". -->
+<div class="search-active-hint" id="search-active-hint" style="display:none">
+  <span>🔍 <span data-i18n="searchActive">Suche aktiv</span>: »<span id="search-active-term"></span>« — <span data-i18n="searchActiveHint">der Filter wirkt zusätzlich.</span></span>
+  <button class="hbtn btn-xs" onclick="clearSearch()" data-i18n="searchClear">Suche leeren</button>
 </div>
 <div class="view" id="view-grid">
   <div id="grid-sortbar" class="grid-sortbar"></div>
@@ -1128,6 +1294,9 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
 
 <div class="view" id="view-import">
   <div class="ip">
+    <details class="add-settings"><summary class="add-settings-sum">⚙ <span data-i18n="settings">Einstellungen</span>
+      <button class="hbtn btn-xs" style="margin-left:10px" onclick="event.preventDefault();confirmDelAll()" id="btn-delall" data-i18n="deleteAll">Alle löschen</button>
+    </summary>
     <div class="pc">
       <h2>📡 Drucker im Netzwerk suchen</h2>
       <p class="lead">
@@ -1145,7 +1314,7 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
       <p id="imp-csv-desc"></p>
       <div class="dz" id="dz" onclick="document.getElementById('fi').click()">
         <p id="dz-text"></p>
-        <input type="file" id="fi" accept=".csv,.txt" onchange="rdF(this)">
+        <input type="file" id="fi" accept=".csv,.txt,.yaml,.yml" onchange="rdF(this)">
       </div>
       <div class="ia">
         <button class="hbtn" onclick="setShown(document.getElementById('ir'), false)" id="btn-clear"></button>
@@ -1177,11 +1346,6 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
       </div>
       <div id="fw-liste" class="fw-liste"></div>
       <div id="fw-roh" class="fw-roh"></div>
-    </div>
-    <div class="pc">
-      <h2><span id="imp-saved-title"></span> <span id="sc" class="count-note"></span></h2>
-      <div id="ql" class="mt8 ql-wrap"></div>
-      <button class="hbtn mt12" onclick="confirmDelAll()" id="btn-delall"></button>
     </div>
     <div class="pc">
       <h2 id="cam-admin-title">📷 Kameras</h2>
@@ -1224,6 +1388,7 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
         <button class="hbtn green" onclick="dlYaml()" id="btn-expyaml"></button>
       </div>
     </div>
+    </details>
   </div>
 </div>
 
@@ -1599,6 +1764,17 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
     <div class="jobs-col jobs-col-run">
       <h2 data-i18n="jobsRunning">⚙ Laufende Aufträge</h2>
       <div id="jobs-list" class="jobs-list"></div>
+
+      <!-- Upload-Historie (bleibt über Neustarts erhalten) -->
+      <div class="stcard card-inset mt16">
+        <div class="row-10">
+          <h2 class="jobs-sub" data-i18n="uploadHistory">🕘 Upload-Historie</h2>
+          <span class="note-sm" id="ul-zusammenfassung"></span>
+          <button class="hbtn btn-xs push-right" onclick="loadUploadLog()" data-i18n="loadData">↺ Daten laden</button>
+          <button class="hbtn btn-xs btn-danger" id="btn-ul-leeren" onclick="leereUploadLog()" disabled data-i18n="clearHistory">Historie leeren</button>
+        </div>
+        <div id="ul-liste" class="ul-liste"></div>
+      </div>
     </div>
     <div class="jobs-col jobs-col-plan">
       <div class="plan-head">
@@ -1626,6 +1802,7 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
     <!-- Upload & Push -->
     <div class="stcard">
       <h2>🗂 Druckdateien verwalten</h2>
+      <details class="add-settings"><summary class="add-settings-sum">⚙ <span data-i18n="settings">Einstellungen</span></summary>
 
       <!-- Dauerhafter Hinweis: der Dateizugriff braucht LAN-/Entwicklermodus + Zugangscode; nur Port 990. -->
       <div class="fs-hint" id="fs-perm-hint" data-i18n="fsPermHint">Dateizugriff läuft ausschließlich über den Drucker-Speicher auf Port 990. Antwortet ein Drucker nicht: am Gerät den LAN-/Entwicklermodus einschalten und den Zugangscode hinterlegen — einen anderen Port bietet der Drucker nicht.</div>
@@ -1644,6 +1821,7 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
                  oninput="onSearchTyping()" onkeydown="if(event.key==='Enter')toggleSearch()"
                  class="search-field">
           <button class="hbtn" id="btn-search" onclick="toggleSearch()">Suchen</button>
+          <button class="hbtn btn-xs" id="btn-search-clear" onclick="clearFileSearch()" title="Leeren">✕</button>
           <span id="fileSearchStatus" class="note"></span>
         </div>
         <div class="bar-track-slim hidden" id="searchBarWrap">
@@ -1659,7 +1837,6 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
       </div>
 
       <!-- Model filter -->
-      <div class="sync-filter-bar mt10" id="sync-model-filter"></div>
 
       <!-- Modus-Wahl -->
       <div class="stcard card-inset mt10" id="sync-mode-card">
@@ -1680,22 +1857,6 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
         <div id="sync-diff-hint" class="sync-diff-hint mt8" style="display:none;"></div>
       </div>
 
-      <!-- Drop zone -->
-      <div class="drop-zone" id="syncDropZone" onclick="document.getElementById('syncFileInput').click()">
-        <div id="syncDropText">📂 Dateien hier reinziehen oder klicken<br><span class="hint-xs">.gcode / .3mf Dateien</span></div>
-        <div class="drop-file-list" id="syncDropList"></div>
-      </div>
-      <input type="file" id="syncFileInput" multiple accept=".gcode,.3mf" class="hidden">
-
-      <!-- Printer selection -->
-      <div class="row-10-mb">
-        <button class="hbtn btn-xs" id="sync-toggle-btn" onclick="syncToggleAll()">☑ Alle abwählen</button>
-        <span class="note-sm" id="sync-sel-count">0 Drucker ausgewählt</span>
-        <button class="hbtn btn-xs push-right" onclick="loadAllSDFiles()" id="btn-loadall">↺ Inhalte laden</button>
-      </div>
-      <div class="sync-printer-list" id="syncPrinterList"></div>
-
-      <!-- Medien / Speicher: über die oben ausgewählten Drucker anwendbar -->
       <div class="stcard card-inset mt10" id="sync-media-card">
         <div class="row-10">
           <strong data-i18n="mediaFarmTitle">Medien / Speicher (Auswahl)</strong>
@@ -1709,6 +1870,39 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
         </div>
         <div id="sync-media-result" class="mt8"></div>
       </div>
+      </details>
+      <!-- Drop zone -->
+      <div class="drop-zone" id="syncDropZone" onclick="document.getElementById('syncFileInput').click()">
+        <div id="syncDropText">📂 Dateien hier reinziehen oder klicken<br><span class="hint-xs">.gcode / .3mf Dateien</span></div>
+        <div class="drop-file-list" id="syncDropList"></div>
+      </div>
+      <input type="file" id="syncFileInput" multiple accept=".gcode,.3mf" class="hidden">
+
+      <!-- Printer selection — the ONE shared list (moved below both tabs at runtime) -->
+      <div id="sharedPrinterList">
+        <!-- Shared search: the term is NOT applied while typing (that used to hide
+             every printer the moment a filename was entered). Instead the user
+             picks which search to run: "Drucker suchen" filters the list by
+             name/IP, "Datei suchen" searches the printers' SD cards. -->
+        <div class="header-search modal-list-search" id="modal-search-wrap">
+          <span class="hs-icon">🔍</span>
+          <input class="search-input" id="modalListSearch" type="text" placeholder="Drucker- oder Dateiname eingeben, dann Button wählen"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();searchPrinters();}"
+                 readonly onfocus="this.removeAttribute('readonly')"
+                 autocomplete="off" name="df-modal-search" data-1p-ignore="true" data-lpignore="true">
+          <button class="hbtn btn-xs" id="modalPrinterSearchBtn" onclick="searchPrinters()" title="Liste nach Drucker-Name/IP filtern">🔍 Drucker suchen</button>
+          <button class="hbtn btn-xs" id="modalFileSearchBtn" onclick="modalFileSearch()" title="Datei/Figur auf den Druckern suchen">🔎 Datei suchen</button>
+          <button class="hs-clear" id="modalListSearchClear" style="display:none" onclick="clearModalListSearch()" title="Leeren">✕</button>
+        </div>
+        <div class="sync-filter-bar mt6" id="sync-model-filter"></div>
+        <div class="row-10-mb">
+          <button class="hbtn btn-xs" id="sync-toggle-btn" onclick="syncToggleAll()">☑ Alle abwählen</button>
+          <span class="note-sm" id="sync-sel-count">0 Drucker ausgewählt</span>
+          <button class="hbtn btn-xs" onclick="collapseAllUpr()" data-i18n="collapseAll">⊟ Alle einklappen</button>
+          <button class="hbtn btn-xs push-right" onclick="loadAllSDFiles()" id="btn-loadall">↺ Inhalte laden</button>
+        </div>
+        <div class="sync-printer-list" id="syncPrinterList"></div>
+      </div>
 
       <!-- Upload button + progress -->
       <div class="row-8-mt">
@@ -1718,16 +1912,6 @@ body.broadcast-mode.bc-noclick #bc-root{pointer-events:none;}
         <span id="syncUploadStatus" class="note-sm"></span>
       </div>
       <div id="syncUploadProgress" class="mt8 hidden"></div>
-
-      <!-- Historie: bleibt ueber Neustarts hinweg erhalten -->
-      <div class="stcard card-inset mt10">
-        <div class="row-10">
-          <button class="hbtn btn-xs" onclick="loadUploadLog()">🕘 Historie laden</button>
-          <span class="note-sm" id="ul-zusammenfassung"></span>
-          <button class="hbtn btn-xs btn-danger push-right" id="btn-ul-leeren" onclick="leereUploadLog()" disabled>Historie leeren</button>
-        </div>
-        <div id="ul-liste" class="ul-liste"></div>
-      </div>
     </div>
   </div>
 </div>
@@ -2273,6 +2457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // abbrechen.
   try { await loadSettings(); } catch(e) {}
   applyLang();
+  hostActionViews(); // move Add-Printer/Upload-File views into the shared modal once
   loadMe(); // who is logged in → sets role, shows/hides admin controls
 
   // IMPORTANT: show the overview IMMEDIATELY — before printers/cameras are loaded.
@@ -3078,6 +3263,10 @@ function buildDropdownContent(p) {
   const s = STATUS[p.ip];
   const errs = ERRORS ? ERRORS.find(e => e.ip === p.ip) : null;
   let rows = '';
+  // IP address + quick edit button at the very top of the detail modal.
+  rows += '<div class="dd-row"><span class="dd-lbl">IP</span>'
+       + '<span class="dd-val mono">' + esc(p.ip) + '</span>'
+       + '<button class="pc-btn" style="margin-left:auto" onclick="event.stopPropagation();editPrinter(\'' + esc(p.ip) + '\')" title="' + esc(t('edit')) + '">✎ ' + t('edit') + '</button></div>';
   if (s && s.online) {
     { const stt = String(s.gcode_state||'').toUpperCase();
       const ack = isErrAcked(p.ip);
@@ -3088,11 +3277,17 @@ function buildDropdownContent(p) {
       if (rawHatFehler(p.ip) && !ack) {
         rows += '<div class="dd-row"><button class="pc-btn" style="width:100%" onclick="event.stopPropagation();ackError(\''+esc(p.ip)+'\')">'+t('mdAckErr')+'</button></div>';
       } }
-    // Colored print preview (plate thumbnail from the .3mf on the SD). Hidden
-    // automatically when there is none for the current file.
+    // Colored print preview (plate thumbnail from the .3mf on the SD). Loads
+    // ONLY on click — fetching it pulls the whole .3mf over FTP, so we do not do
+    // that automatically on every modal open (keeps FTP load low vs. 421).
     { const pf = printFileName(s);
       if (pf && /\.3mf$/i.test(pf)) {
-        rows += '<div class="dd-preview" title="'+esc(t('mdPreview'))+'"><img class="dd-preview-img" loading="lazy" src="/api/preview?ip='+encodeURIComponent(p.ip)+'&file='+encodeURIComponent(pf)+'" onerror="this.closest(\'.dd-preview\').style.display=\'none\'" alt="'+esc(t('mdPreview'))+'"></div>';
+        if (PREVIEW_SHOWN.has(p.ip)) {
+          const url = '/api/preview?ip='+encodeURIComponent(p.ip)+'&file='+encodeURIComponent(pf);
+          rows += '<div class="dd-preview" id="ddprev-'+esc(p.ip)+'"><img class="dd-preview-img" src="'+esc(url)+'" onerror="this.closest(\'.dd-preview\').innerHTML=\''+esc(t('mdPreviewNone'))+'\'" alt="'+esc(t('mdPreview'))+'"></div>';
+        } else {
+          rows += '<div class="dd-preview" id="ddprev-'+esc(p.ip)+'"><button class="pc-btn" style="width:100%" onclick="event.stopPropagation();loadPreview(\''+esc(p.ip)+'\')">'+t('mdPreviewLoad')+'</button></div>';
+        }
       } }
     { const pfn = printFileName(s); if (pfn) rows += '<div class="dd-row"><span class="dd-lbl">Datei</span><span class="dd-val">'+esc(pfn)+'</span></div>'; }
     if (s.progress > 0)    rows += '<div class="dd-row"><span class="dd-lbl">Fortschritt</span><span class="dd-val">'+s.progress+'%</span></div>';
@@ -3132,6 +3327,9 @@ function buildDropdownContent(p) {
     + '<div class="dd-block"><div class="dd-block-title">'+t('ddAI')+'</div>' + ki + '</div>'
     + '<div class="dd-block"><div class="dd-block-title">'+t('ddMedia')+'</div>' + buildMediaControls(p) + '</div>'
     + '<div class="dd-block"><div class="dd-block-title">AMS</div>' + buildAMSUnits(p) + '</div>'
+    + '<div class="dd-block"><div class="dd-block-title">'+t('histTitle')+'</div><div class="dd-hist" id="ddhist-'+esc(p.ip)+'">'
+      + (HISTORY_SHOWN.has(p.ip) ? renderHistoryHTML(p.ip) : '<button class="pc-btn" style="width:100%" onclick="event.stopPropagation();loadPrinterHistory(\''+esc(p.ip)+'\')">'+t('histLoad')+'</button>')
+      + '</div></div>'
     + '</div>';
 }
 
@@ -3669,6 +3867,7 @@ function buildPrintControls(p) {
       + '<input type="file" id="mup-' + ip + '" accept=".gcode,.3mf" style="display:none" onchange="modalUpload(\'' + ip + '\', this)">'
       + '<button class="pc-btn" ' + (active ? 'disabled ' : '') + 'onclick="byId(\'mup-' + ip + '\').click()">'+t('modalUpload')+'</button></div>'
     + '<div class="ds-box hidden" id="ds-' + ip + '"></div>'
+    + ((online && !active && (state === 'FAILED' || (s && s.print_error > 0))) ? '<div class="dd-err mt5">'+t('pcErrState')+'</div>' : '')
     + (online ? '' : '<div class="dd-none mt5">Steuerung braucht eine MQTT-Verbindung</div>');
 }
 
@@ -3920,6 +4119,23 @@ function toggleDD(ip) {
   if (arr) arr.classList.add('open');
 }
 
+// openDetailModal opens the same detail modal as the overview, but always as a
+// centered modal box (no tile anchor needed) — used from File Sync so a printer
+// name / "more" there gives the full view incl. starting a print.
+function openDetailModal(ip) {
+  closeDD();
+  const pop = document.getElementById('dd-pop');
+  if (!pop) return;
+  const p = P.find(x => x.ip === ip) || {ip};
+  pop.innerHTML = '<div class="dd-title">' + esc(p.name || ip) + '<span class="dd-close" title="' + esc(t('close')) + '" onclick="event.stopPropagation();closeDD()">✕</span></div>' + buildDropdownContent(p);
+  DD_OPEN_IP = ip;
+  DD_MODAL = true;
+  pop.style.left = ''; pop.style.top = '';
+  pop.classList.add('open', 'dd-modal');
+  const bd = document.getElementById('dd-backdrop');
+  if (bd) bd.classList.add('open');
+}
+
 function positionDD(anchor, pop) {
   const r = anchor.getBoundingClientRect();
   const w = pop.offsetWidth, h = pop.offsetHeight;
@@ -4029,6 +4245,8 @@ function refreshTile(ip) {
   // Previously it was fully rebuilt on every status tick; an
   // open file picker or a half-filled form was
   // thus gone after five seconds.
+  // Keep the shared printer-list row (modal) status/progress fill live.
+  if (ACTION_MODAL_OPEN && typeof repaintUprRow === 'function') repaintUprRow(ip);
   if (typeof LIST_AUF !== 'undefined' && LIST_AUF.has(ip) && detailFrei(ip)) drawListRow(ip);
   if (DD_OPEN_IP === ip) {
     const pop = document.getElementById('dd-pop');
@@ -4350,6 +4568,13 @@ function buildTile(p) {
 // printFileName returns the print file name. Source is subtask_name; if it is
 // empty (some models, e.g. woobly 16), the base name from gcode_file is
 // used. The extensions .gcode/.3mf are stripped.
+// maskSerial hides the middle of a serial number, keeping the first 4 and the
+// last 3 characters visible (like the access code, revealable on click).
+function maskSerial(s){
+  s = String(s || '');
+  if (s.length <= 7) return s.replace(/./g, '*');
+  return s.slice(0, 4) + '*'.repeat(s.length - 7) + s.slice(-3);
+}
 function printFileName(s){
   let n = String((s && s.subtask_name) || '').trim();
   if(!n){
@@ -4387,6 +4612,86 @@ function ackError(ip){
   // force it so the tag disappears immediately, not just the border.
   if (typeof renderTile === 'function' && document.querySelector('.tile[data-ip="' + CSS.escape(ip) + '"]')) renderTile(ip);
   toast(t('mdAckDone'), 'ok');
+}
+
+// ─── EINFACH- / EXPERTEN-ANSICHT ──────────────────────────────────────────────
+// Print preview is loaded only on demand (per printer) — fetching pulls the
+// whole .3mf over FTP. Once loaded it stays shown for this session.
+let PREVIEW_SHOWN = new Set();
+async function loadPreview(ip){
+  PREVIEW_SHOWN.add(ip);
+  const box = byId('ddprev-'+ip); if(!box) return;
+  const s = STATUS[ip] || {}; const pf = printFileName(s);
+  if(!pf){ box.innerHTML = '<span class="note-sm">'+t('mdPreviewNone')+'</span>'; return; }
+  box.innerHTML = '<div class="note-sm"><span class="spinner spinner-sm"></span> '+t('mdPreviewLoad')+'</div>';
+  // Ask which plates the (.gcode).3mf contains; one download extracts them all
+  // into the PC cache. token = SIZE+MDTM so an overwritten file refreshes.
+  let plates = [1], token = '';
+  try{
+    const d = await (await fetch('/api/plates?ip='+encodeURIComponent(ip)+'&file='+encodeURIComponent(pf),{cache:'no-store'})).json();
+    if(d && Array.isArray(d.plates) && d.plates.length) plates = d.plates;
+    token = (d && d.token) || '';
+  }catch(e){}
+  const imgs = plates.map(n=>{
+    const url = '/api/preview?ip='+encodeURIComponent(ip)+'&file='+encodeURIComponent(pf)+'&plate='+n+'&token='+encodeURIComponent(token);
+    const lbl = plates.length>1 ? '<span class="dd-plate-lbl">'+t('plate')+' '+n+'</span>' : '';
+    return '<div class="dd-plate">'+lbl+'<img class="dd-preview-img" src="'+url+'" onerror="this.closest(\'.dd-plate\').style.display=\'none\'" alt="'+t('mdPreview')+' '+n+'"></div>';
+  }).join('');
+  box.innerHTML = '<div class="dd-preview-wrap'+(plates.length>1?' multi':'')+'">'+imgs+'</div>'
+    + '<div class="dd-colors" id="ddcol-'+esc(ip)+'"></div>';
+  // Also fetch the file's filament colours and compare them to what is in the AMS.
+  try{
+    const d = await (await fetch('/api/filecolors?ip='+encodeURIComponent(ip)+'&file='+encodeURIComponent(pf),{cache:'no-store'})).json();
+    renderColorCompare(ip, (d && d.colors) || []);
+  }catch(e){}
+}
+// amsColorsFlat returns the AMS tray colours in slot order (empty string for an
+// empty tray), so they can be lined up against the file's filament colours.
+function amsColorsFlat(ip){
+  const s = STATUS[ip] || {}; const out = [];
+  (s.ams || []).forEach(u => (u.trays || []).forEach(tr => { out.push(tr && tr.color ? '#'+String(tr.color).slice(0,6) : ''); }));
+  return out;
+}
+function renderColorCompare(ip, fileCols){
+  const box = byId('ddcol-'+ip); if(!box) return;
+  if(!fileCols.length){ box.innerHTML = ''; return; }
+  const ams = amsColorsFlat(ip);
+  let h = '<div class="cc-title">'+t('ccTitle')+'</div><div class="cc-grid">';
+  fileCols.forEach((fc,i) => {
+    const a = ams[i] || '';
+    const fcx = (fc && fc.length >= 7) ? fc.slice(0,7) : fc;
+    h += '<div class="cc-col"><span class="cc-n">'+(i+1)+'</span>'
+      + '<span class="cc-sw" title="'+t('ccFile')+': '+esc(fcx||'-')+'" style="background:'+esc(fcx||'#3a3f46')+'"></span>'
+      + '<span class="cc-vs">→</span>'
+      + '<span class="cc-sw'+(a?'':' cc-empty')+'" title="'+t('ccAms')+': '+esc(a||'-')+'" style="background:'+esc(a||'transparent')+'"></span>'
+      + '</div>';
+  });
+  h += '</div><div class="note-sm">'+t('ccLegend')+'</div>';
+  box.innerHTML = h;
+}
+
+// Per-printer error history — loaded on demand (local, cheap). Cached so a modal
+// re-render keeps showing it.
+let HISTORY_SHOWN = new Set(), HISTORY_DATA = {};
+async function loadPrinterHistory(ip){
+  HISTORY_SHOWN.add(ip);
+  try{ const d = await (await fetch('/api/history?ip='+encodeURIComponent(ip),{cache:'no-store'})).json(); HISTORY_DATA[ip] = (d && d.entries) || []; }
+  catch(e){ HISTORY_DATA[ip] = []; }
+  const box = byId('ddhist-'+ip); if(box) box.innerHTML = renderHistoryHTML(ip);
+}
+function renderHistoryHTML(ip){
+  const es = HISTORY_DATA[ip] || [];
+  if(!es.length) return '<div class="note-sm">'+t('histEmpty')+'</div>';
+  return '<div class="hist-list">' + es.slice(0,25).map(e => {
+    const d = new Date((e.time||0)*1000);
+    const ts = d.toLocaleDateString() + ' ' + (d.toTimeString().slice(0,5));
+    const code = [(e.error? 'print_error '+e.error : ''), ((e.hms&&e.hms.length)? e.hms.join(', ') : '')].filter(Boolean).join(' · ');
+    return '<div class="hist-row"><span class="hist-t">'+esc(ts)+'</span>'
+      + '<span class="hist-st '+(String(e.state).toUpperCase()==='FAILED'?'fail':'')+'">'+esc(e.state||'')+'</span>'
+      + '<span class="hist-code">'+esc(code||'—')+'</span>'
+      + (e.file? '<span class="hist-f" title="'+esc(e.file)+'">'+esc(e.file)+'</span>' : '')
+      + '</div>';
+  }).join('') + '</div>';
 }
 
 function printerFields(p) {
@@ -4493,8 +4798,10 @@ async function qlToggleCamera(ip){ try{ await toggleCamera(ip);}catch(e){} rende
 async function qlToggleBlink(ip){ try{ await toggleBlink(ip);}catch(e){} renderQL(); }
 
 async function toggleRepair(ip, an) {
-  let note = '';
-  if (an) { note = prompt(t('repairNote')) || ''; }
+  // No reason prompt: a second modal opened behind the action modal (invisible)
+  // and blocked the toggle. Speed matters — flip the state immediately. A reason
+  // can be added later via the detail modal.
+  const note = '';
   try {
     const r = await fetch('/api/repair', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ip, in_repair: an, note})});
     const d = await r.json();
@@ -5329,7 +5636,12 @@ function setQLSort(key){
 function qlSortPfeil(key){ return QL_SORT.key!==key ? '' : '<span class="pf">'+(QL_SORT.dir>0?' ▲':' ▼')+'</span>'; }
 
 function renderQL(){
+  // One unified list: the saved-printer list IS the collapsible File-Sync list.
+  // Redirect every refresh hook to it. (The old #ql container is gone.)
+  const sl=document.getElementById('syncPrinterList');
+  if(sl){ renderSyncPrinterList(); return; }
   const el=document.getElementById('ql');
+  if(!el) return;
   setText('sc', '('+P.length+')');
   if(!P.length){el.innerHTML='<p class="note">'+t('noDevicesQL')+'</p>';return;}
   const th=(key,label)=>'<span class="sortbar'+(QL_SORT.key===key?' aktiv':'')+'" onclick="setQLSort(\''+key+'\')">'+label+qlSortPfeil(key)+'</span>';
@@ -5359,31 +5671,56 @@ function renderQL(){
 
 // editPrinter turns the row into a form. Access code and name can
 // be changed this way without deleting and re-adding the printer.
+// editPrinter now opens a small modal (the old inline editor relied on the
+// removed #ql list). Field IDs match exactly what savePrinter() reads.
+// editPrinter edits INLINE inside the expanded printer row (no extra modal).
+// Only if that row isn't present (e.g. called from the grid detail popover) does
+// it fall back to the small modal. Field IDs match what savePrinter() reads.
 function editPrinter(ip) {
   const p = P.find(x => x.ip === ip);
-  const row = document.getElementById('qlrow-' + ip);
-  if (!p || !row) return;
-  row.classList.add('editing');
-  // The same column order as without editing: star, model, name,
-  // access code, serial number, IP. Previously the IP slipped onto its own row.
-  row.innerHTML = '<span class="df-stern' + (p.fav ? ' on' : '') + '">' + (p.fav ? '★' : '☆') + '</span>'
-    + '<input id="ed-model-' + esc(ip) + '" class="ed-model" value="' + esc(p.model) + '" placeholder="Modell" oninput="this.value=this.value.toUpperCase()">'
-    + '<input id="ed-name-' + esc(ip) + '" class="ed-name" value="' + esc(p.name) + '" placeholder="Name">'
-    + '<span></span>'
-    + '<input id="ed-code-' + esc(ip) + '" class="ed-code mono" value="' + esc(p.code || '') + '" placeholder="Zugangscode">'
-    + '<input id="ed-serial-' + esc(ip) + '" class="ed-serial mono" value="' + esc(p.serial || '') + '" placeholder="Seriennummer">'
-    + '<input id="ed-ip-' + esc(ip) + '" class="ed-ip mono" value="' + esc(p.ip) + '" placeholder="IP-Adresse">'
-    + '<div class="ql-actions">'
-    +   '<button class="hbtn green btn-sm" onclick="savePrinter(\'' + esc(ip) + '\')">Speichern</button>'
-    +   '<button class="hbtn btn-sm" onclick="renderQL()">Abbrechen</button>'
-    + '</div>';
+  if (!p) return;
+  const fld = (lbl, id, val, ph, extra) =>
+    '<div class="ed-fld"><label>' + lbl + '</label>'
+    + '<input id="' + id + '-' + esc(ip) + '" class="repo-input mono" value="' + esc(val || '') + '" placeholder="' + esc(ph || '') + '" ' + (extra || '') + '></div>';
+  // The access code stays hidden until the eye button reveals it, so it can't be
+  // read over someone's shoulder just by expanding the row.
+  const codeFld = '<div class="ed-fld"><label>Zugangscode</label>'
+    + '<div class="ed-code-wrap">'
+    +   '<input id="ed-code-' + esc(ip) + '" class="repo-input mono" type="password" value="' + esc(p.code || '') + '" placeholder="abcd1234" autocomplete="off">'
+    +   '<button type="button" class="ed-eye" title="Anzeigen/Verbergen" onclick="var i=document.getElementById(\'ed-code-' + esc(ip) + '\');i.type=i.type===\'password\'?\'text\':\'password\';this.classList.toggle(\'on\',i.type===\'text\')">👁</button>'
+    + '</div></div>';
+  const form = '<div class="ed-form">'
+    + fld('Modell', 'ed-model', p.model, 'Modell', 'oninput="this.value=this.value.toUpperCase()"')
+    + fld('Name', 'ed-name', p.name, 'Name')
+    + fld('IP', 'ed-ip', p.ip, '192.168.1.100')
+    + codeFld
+    + fld('Seriennummer', 'ed-serial', p.serial, '01P00C123456789')
+    + '<div class="ed-btns">'
+    +   '<button class="hbtn primary btn-sm" onclick="savePrinter(\'' + esc(ip) + '\')" data-i18n="save">Speichern</button>'
+    +   '<button class="hbtn btn-sm" onclick="renderSyncPrinterList()" data-i18n="cancel">Abbrechen</button>'
+    + '</div></div>';
+
+  const row = document.getElementById('srow-' + ip);
+  const body = row && row.querySelector('.upr-body');
+  if (body) {
+    if (typeof closeDD === 'function') closeDD(); // close any detail popover so the inline edit shows
+    openUpr(ip);
+    body.innerHTML = form;
+  } else {
+    const m = document.getElementById('editp-modal'), mb = document.getElementById('editp-body');
+    if (!m || !mb) return;
+    mb.innerHTML = form;
+    m.style.display = 'flex';
+  }
+  const scope = body || document.getElementById('editp-body');
   const n = document.getElementById('ed-name-' + ip);
-  if (n) { n.focus(); n.select(); }
-  row.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => {
+  if (n) setTimeout(() => { n.focus(); n.select(); }, 30);
+  if (scope) scope.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => {
     if (e.key === 'Enter') savePrinter(ip);
-    if (e.key === 'Escape') renderQL();
+    if (e.key === 'Escape') { if (body) renderSyncPrinterList(); else closeEditPrinter(); }
   }));
 }
+function closeEditPrinter(){ const m = document.getElementById('editp-modal'); if (m) m.style.display = 'none'; }
 
 // pingPrinter checks a printer's reachability immediately (without waiting for the
 // next status tick): /api/reach knocks on the MQTT/FTP/camera port.
@@ -5585,6 +5922,7 @@ async function savePrinter(ip) {
       renderSyncPrinterList();
     }
     toast(name + ' gespeichert', 'ok');
+    closeEditPrinter(); // close the edit dialog on success
     // Right after editing, check whether the printer (at a possibly new address)
     // is reachable — the server just rebuilt the MQTT connection.
     pingPrinter(neueIP);
@@ -5747,35 +6085,53 @@ async function addM(){
 async function delP(ip){const p=P.find(x=>x.ip===ip);if(!p)return;if(!confirm(t('confirmDel')))return;try{await apiDelete(ip);P=P.filter(x=>x.ip!==ip);delete ST[ip];render();toast(p.name+t('toastRemoved'),'er');}catch(e){toast(e.message,'er');}}
 function confirmDelAll(){if(confirm(t('confirmDelAll')))delAll();}
 async function delAll(){for(const p of[...P])await apiDelete(p.ip);P=[];ST={};render();toast(t('toastAllDeleted'),'er');}
+// looksLikeYamlImport detects a go2rtc.yaml paste/upload so we skip the CSV
+// field check and let the server reconstruct printers from the stream URLs.
+function looksLikeYamlImport(raw){
+  const low = (raw||'').toLowerCase();
+  return (low.includes('bblp:') && low.includes('://'))
+      || low.trimStart().startsWith('# go2rtc')
+      || (low.includes('\nstreams:') && low.includes('rtsp'));
+}
 async function impCSV(raw){
   raw = raw || '';
   if(!raw.trim()){toast(t('toastNoContent'),'er');return;}
-  // Validate CSV format before sending
-  const lines = raw.trim().split('\n').filter(l=>l.trim()&&!l.trim().startsWith('#'));
-  if(lines.length===0){toast('Keine gültigen Zeilen gefunden','er');return;}
-  // Detect separator: , or ;
-  const sep = lines[0].includes(';') ? ';' : ',';
-  const invalidLines=[];
-  lines.forEach((line,i)=>{
-    const parts=line.split(sep).map(s=>s.trim());
-    if(parts.length<4){invalidLines.push('Zeile '+(i+1)+': zu wenig Felder ('+parts.length+'/4): '+line.substring(0,40));}
-  });
-  if(invalidLines.length>0){
-    const ir=document.getElementById('ir');
-    if(ir){setShown(ir, true);ir.className='ir er';ir.textContent='Format-Fehler: '+invalidLines[0];}
-    toast('CSV Format-Fehler — erwartet: Name,IP,Code,Modell,Serial','er');
-    return;
+  const ir=document.getElementById('ir');
+  const isYaml = looksLikeYamlImport(raw);
+  if(!isYaml){
+    // CSV: validate lightly. A header row (IP column not an IP) is tolerated —
+    // the server skips it. Only block if NO line has at least 3 fields.
+    const lines = raw.trim().split('\n').filter(l=>l.trim()&&!l.trim().startsWith('#'));
+    const sep = (lines[0]&&lines[0].includes(';')) ? ';' : ',';
+    const anyValid = lines.some(l=>l.split(sep).length>=3);
+    if(!anyValid){
+      if(ir){setShown(ir, true);ir.className='ir er';ir.textContent='Format-Fehler — erwartet: Name,IP,Code,Modell,Serial (oder eine go2rtc.yaml).';}
+      toast('CSV Format-Fehler — erwartet: Name,IP,Code,Modell,Serial','er');
+      return;
+    }
   }
   try{
     const res=await apiImport(raw);
     await loadPrinters();
-    const ir=document.getElementById('ir');
-    if(ir){setShown(ir, true);
-      if(res.added>0){ir.className='ir ok';ir.textContent='✓ '+res.added+t('importOk')+(res.skipped>0?' ('+res.skipped+t('importSkipped')+')':'');toast(res.added+t('toastImported'),'ok');}
-      else{ir.className='ir er';ir.textContent=t('importNone')+res.skipped+' Fehler/Duplikate)';}}
+    const added=res.added||0, updated=res.updated||0, skipped=res.skipped||0;
+    if(ir){
+      setShown(ir, true);
+      if(added>0||updated>0){
+        ir.className='ir ok';
+        const bits=[];
+        if(added>0)   bits.push(added+' neu');
+        if(updated>0) bits.push(updated+' aktualisiert');
+        if(skipped>0) bits.push(skipped+' übersprungen');
+        ir.textContent='✓ '+bits.join(' · ');
+        toast('Import: '+bits.join(' · '),'ok');
+      } else {
+        ir.className='ir er';
+        ir.textContent='Nichts importiert ('+skipped+' übersprungen) — Format prüfen (CSV: Name,IP,Code,Modell,Serial, oder go2rtc.yaml).';
+        toast('Nichts importiert','er');
+      }
+    }
   }
   catch(e){
-    const ir=document.getElementById('ir');
     if(ir){setShown(ir, true);ir.className='ir er';ir.textContent='Fehler: '+e.message;}
     toast('Import fehlgeschlagen: '+e.message,'er');
   }
@@ -5940,8 +6296,10 @@ let syncDropFiles = []; // Array of File objects
 // tatsaechlicher Filter liefen auseinander.
 let syncModelFilter = (function(){ try { return localStorage.getItem('df_syncModelFilter') || 'all'; } catch(e){ return 'all'; } })();
 
-function initSyncUpload() {
-  // Build model filter pills
+// renderSyncModelPills (re)builds the model-filter pills above the shared
+// printer list. Lives in the shared list, so it must populate on BOTH modal
+// tabs — call it from openActionModal, not only the upload-tab init.
+function renderSyncModelPills() {
   const models = [...new Set(P.map(p => p.model).filter(Boolean))].sort();
   const bar = document.getElementById('sync-model-filter');
   if (!bar) return;
@@ -5955,6 +6313,12 @@ function initSyncUpload() {
     html += '<span class="sync-model-pill'+act(m)+'" data-model="'+esc(m)+'" onclick="setSyncModel(\''+esc(m)+'\')" style="--mc:'+mc+'">'+esc(m)+'</span>';
   });
   bar.innerHTML = html;
+}
+
+function initSyncUpload() {
+  renderSyncModelPills();
+  const bar = document.getElementById('sync-model-filter');
+  if (!bar) return;
 
   // Build printer list
   renderSyncPrinterList();
@@ -6016,30 +6380,122 @@ function setSyncSort(key) {
 }
 function syncSortPfeil(key) { return SYNC_SORT.key !== key ? '' : '<span class="pf">' + (SYNC_SORT.dir > 0 ? ' ▲' : ' ▼') + '</span>'; }
 
+// UPR_OPEN remembers which rows the user expanded (survives a list rebuild).
+let UPR_OPEN = new Set();
+function toggleUpr(ip){
+  if (UPR_OPEN.has(ip)) UPR_OPEN.delete(ip); else UPR_OPEN.add(ip);
+  const row = document.getElementById('srow-' + ip);
+  if (row) row.classList.toggle('open', UPR_OPEN.has(ip));
+}
+// openUpr force-expands a row (used when SD files load or search hits arrive, so
+// the content isn't hidden inside a collapsed row).
+function openUpr(ip){
+  UPR_OPEN.add(ip);
+  const row = document.getElementById('srow-' + ip);
+  if (row) row.classList.add('open');
+}
+// collapseAllUpr folds every printer row back up (e.g. after a file search
+// expanded many of them).
+function collapseAllUpr(){
+  UPR_OPEN.clear();
+  document.querySelectorAll('.upr.open').forEach(r => r.classList.remove('open'));
+}
+
+// UPR_FILTER is the live printer filter over the shared list in the action
+// modal. Typing filters by printer name/IP only (instant, no Enter). Pressing
+// Enter (or the "Datei suchen" button) runs a file/figure search over the
+// printers instead — that is the SD search (modalFileSearch), a separate thing.
+let UPR_FILTER = '';
+function matchesUprFilter(p){
+  const q = UPR_FILTER;
+  if (!q) return true;
+  const name = (p.name || '').toLowerCase();
+  const ip   = (p.ip || '').toLowerCase();
+  return name.includes(q) || ip.includes(q);
+}
+function filterUprList(q){
+  UPR_FILTER = (q || '').toLowerCase().trim();
+  const wrap  = document.getElementById('modal-search-wrap');
+  const clear = document.getElementById('modalListSearchClear');
+  if (wrap)  wrap.classList.toggle('searching', !!UPR_FILTER);
+  if (clear) clear.style.display = UPR_FILTER ? '' : 'none';
+  renderSyncPrinterList();
+}
+// searchPrinters applies the term in the search box as a NAME/IP filter on the
+// printer list. Triggered by the "Drucker suchen" button or Enter — never while
+// typing, so entering a filename no longer makes every printer vanish.
+function searchPrinters(){
+  const inp = document.getElementById('modalListSearch');
+  filterUprList(inp ? inp.value : '');
+}
+function clearModalListSearch(){
+  const inp = document.getElementById('modalListSearch');
+  if (inp) inp.value = '';
+  filterUprList('');
+}
+// modalFileSearch routes the term in the shared search box into the existing
+// file/figure search over the printers' SD cards (startSearch). Enter in the
+// search box and the "Datei suchen" button both call this.
+function modalFileSearch(){
+  const inp = document.getElementById('modalListSearch');
+  const q = (inp ? inp.value : '').trim();
+  if (q.length < 3){ toast('Dateisuche: mindestens 3 Zeichen', 'er'); return; }
+  const fs = document.getElementById('fileSearch');
+  if (fs){ fs.value = q; if (typeof onSearchTyping === 'function') onSearchTyping(); }
+  if (typeof startSearch === 'function') startSearch();
+}
+
 function renderSyncPrinterList() {
   const el = document.getElementById('syncPrinterList');
   if (!el) return;
-  const gefiltert = syncModelFilter === 'all' ? P : P.filter(p => p.model === syncModelFilter);
+  let gefiltert = syncModelFilter === 'all' ? P : P.filter(p => p.model === syncModelFilter);
+  if (UPR_FILTER) gefiltert = gefiltert.filter(matchesUprFilter);
   const filtered = sortSyncList(gefiltert);
   const th = (key, label) => '<span class="sortbar' + (SYNC_SORT.key===key?' aktiv':'')
       + '" onclick="setSyncSort(\''+key+'\')">' + label + syncSortPfeil(key) + '</span>';
   const kopf = '<div class="sync-sortbar">' + th('name','Name') + th('model','Modell') + th('online','Status') + '</div>';
+  // Never show a blank list: when the filter hits nothing, say so.
+  if (!filtered.length) {
+    el.innerHTML = kopf + '<div class="upr-empty" data-i18n="noPrinterFound">Kein Drucker gefunden</div>';
+    return;
+  }
   el.innerHTML = kopf + filtered.map((p, i) => {
     const mc = modelColor(p.model);
     const idx = P.indexOf(p);
-    return '<div class="sync-printer-item" id="srow-'+esc(p.ip)+'" data-sdip="'+esc(p.ip)+'" data-sdi="'+idx+'">'
-      + '<input type="checkbox" class="sync-cb" data-ip="'+esc(p.ip)+'" onchange="updateSyncSelCount()">'
-      + '<div class="mdot" class="sync-dot" style="--mc:'+mc+'"></div>'
-      + '<span class="sync-printer-label">'+esc(p.name)+'</span>'
-      + onlinePill(p.ip)
-      + '<span class="mono-xs mr6">'+esc(p.model)+'</span>'
-      + '<span class="sd-file-count" id="sdcount2-'+esc(p.ip)+'"></span>'
-      + '<span class="mono-xs ml4" id="sdsize2-'+esc(p.ip)+'"></span>'
-      + '<button class="sd-dl-btn ml6" id="sdbtn-'+esc(p.ip)+'" data-idx="'+idx+'" data-ip="'+esc(p.ip)+'" onclick="loadSDFiles2(parseInt(this.dataset.idx),this.dataset.ip)">↺ '+t('loadData')+'</button>'
-      + '<span class="sd-hitcount" id="sdhits-'+esc(p.ip)+'"></span>'
+    // ONE unified, collapsible row: collapsed shows the minimum (select box,
+    // status, name, model, file count); expanding reveals every action.
+    return '<div class="upr'+(UPR_OPEN.has(p.ip)?' open':'')+'" id="srow-'+esc(p.ip)+'" data-sdip="'+esc(p.ip)+'" data-sdi="'+idx+'">'
+      + '<div class="upr-head" onclick="toggleUpr(\''+esc(p.ip)+'\')">'
+        + '<span class="upr-chev">▸</span>'
+        + '<input type="checkbox" class="sync-cb" data-ip="'+esc(p.ip)+'" onclick="event.stopPropagation()" onchange="updateSyncSelCount()">'
+        + '<div class="mdot sync-dot" style="--mc:'+mc+'"></div>'
+        + '<span class="upr-name">'+esc(p.name)+'</span>'
+        + '<span class="upr-meta mono-xs">IP '+esc(p.ip)+' · SN '
+          + (p.serial ? '<span class="code-mask" data-c="'+esc(p.serial)+'" onclick="event.stopPropagation();this.textContent=this.dataset.c" title="Seriennummer anzeigen">'+esc(maskSerial(p.serial))+'</span>' : '—')
+          + ' · '
+          + (p.code ? '<span class="code-mask" data-c="'+esc(p.code)+'" onclick="event.stopPropagation();this.textContent=this.dataset.c" title="Code anzeigen">••••••</span>' : '—')
+          + '</span>'
+        + '<span class="upr-pbar" id="uprpb-'+esc(p.ip)+'"><i></i></span>'
+        + '<span class="upr-status" id="uprst-'+esc(p.ip)+'"></span>'
+        + onlinePill(p.ip) + fwPillHTML(p.ip)
+        + '<span class="mono-xs mr6">'+esc(p.model)+'</span>'
+        + '<span class="sd-file-count" id="sdcount2-'+esc(p.ip)+'"></span>'
+        + '<span class="mono-xs ml4" id="sdsize2-'+esc(p.ip)+'"></span>'
+        + '<span class="sd-hitcount" id="sdhits-'+esc(p.ip)+'"></span>'
+        + '<button class="sd-dl-btn upr-load" id="sdbtn-'+esc(p.ip)+'" data-idx="'+idx+'" data-ip="'+esc(p.ip)+'" title="'+esc(t('loadData'))+'" onclick="event.stopPropagation();loadSDFiles2(parseInt(this.dataset.idx),this.dataset.ip)">↺ '+t('loadData')+'</button>'
+        + '<button class="upr-edit" title="'+esc(t('edit'))+'" onclick="event.stopPropagation();openUpr(\''+esc(p.ip)+'\');editPrinter(\''+esc(p.ip)+'\')">✎</button>'
       + '</div>'
-      + '<div class="sd-search" id="sdsearch-'+esc(p.ip)+'"></div>'
-      + '<div class="sd-files" id="sdfiles2-'+esc(p.ip)+'"></div>';
+      + '<div class="upr-body">'
+        + '<div class="upr-actions">'
+          + '<button class="hbtn btn-sm" onclick="openDetailModal(\''+esc(p.ip)+'\')" title="'+esc(t('more'))+'">'+t('more')+'</button>'
+          + qlRepairBtn(p) + qlCameraBtn(p) + qlBlinkBtn(p)
+          + '<button class="hbtn btn-sm" onclick="editPrinter(\''+esc(p.ip)+'\')" data-i18n="edit">Bearbeiten</button>'
+          + '<button class="hbtn btn-sm red" onclick="delP(\''+esc(p.ip)+'\')" data-i18n="delete">Löschen</button>'
+        + '</div>'
+        + '<div class="sd-search" id="sdsearch-'+esc(p.ip)+'"></div>'
+        + '<div class="sd-files" id="sdfiles2-'+esc(p.ip)+'"></div>'
+      + '</div>'
+      + '</div>';
   }).join('');
   // The selection survives the list rebuild. Previously it was gone as soon as
   // one left the view and re-entered it — in the middle of the
@@ -6113,6 +6569,7 @@ async function loadSDFiles2(i, ip, opts) {
 
   const kind = SD_KIND[ip] || 'print';
   files.classList.add('open');
+  openUpr(ip); // expand the collapsible row so the loaded files are visible
   files.innerHTML = sdKindSeg(ip) + '<div class="sd-loading"><span class="spinner spinner-sm"></span> '+t('mediaLoading')+'</div>';
 
   const one = document.getElementById('sdbtn-'+ip);
@@ -6224,6 +6681,7 @@ function updateSyncSelCount() {
   if (btn) btn.disabled = uploadRunning() || checked === 0 || syncDropFiles.length === 0;
   const tb = document.getElementById('sync-toggle-btn');
   if (tb) tb.textContent = (checked === total ? '☑ Alle abwählen' : '☑ Alle auswählen');
+  if (typeof repaintUprRows === 'function') repaintUprRows(); // pending band on/off
 }
 
 function addSyncFiles(files) {
@@ -6288,6 +6746,8 @@ function cancelUpload() {
   UPLOAD.cancelled = true;
   UPLOAD.paused = false;
   UPLOAD.note = 'wird abgebrochen …';
+  // Abort the in-flight request so the current printer stops immediately.
+  if (UPLOAD._abort) { try { UPLOAD._abort.abort(); } catch(e){} }
   renderUploadProgress();
 }
 
@@ -6307,25 +6767,97 @@ function renderUploadProgress() {
   const progDiv = document.getElementById('syncUploadProgress');
   const pauseB  = document.getElementById('syncPauseBtn');
   const cancelB = document.getElementById('syncCancelBtn');
-  if (!progDiv) return;
   const run = uploadRunning();
   if (pauseB)  pauseB.classList.toggle('hidden', !run);
   if (cancelB) cancelB.classList.toggle('hidden', !run);
-  if (!UPLOAD) { setShown(progDiv, false); progDiv.innerHTML = ''; return; }
-  setShown(progDiv, true);
-  progDiv.innerHTML = UPLOAD.ips.map(ip => {
-    const p  = P.find(x => x.ip === ip);
-    const st = UPLOAD.status[ip] || {text: 'Warte …', pct: 0, failed: false};
-    return '<div class="sync-progress-item">'
-      + '<span class="sync-pi-name">' + (p ? esc(p.name) : esc(ip)) + '</span>'
-      + '<div class="sync-pi-bar"><div class="sync-pi-fill bar-fill' + (st.failed ? ' failed' : '')
-      + '" style="--w:' + st.pct + '%"></div></div>'
-      + '<span class="sync-pi-status">' + esc(st.text) + '</span>'
-      + '</div>';
-  }).join('');
-  setText('syncUploadStatus', UPLOAD.note || (UPLOAD.done + ' / ' + UPLOAD.ips.length));
+  // The per-printer bar list is gone — upload progress is drawn as the TOP band
+  // of each printer row (print progress is the bottom band). Keep only the
+  // short summary + the controls.
+  if (progDiv) { progDiv.innerHTML = ''; setShown(progDiv, false); }
+  setText('syncUploadStatus', UPLOAD ? (UPLOAD.note || (UPLOAD.done + ' / ' + UPLOAD.ips.length)) : '');
+  repaintUprRows();
   if (typeof updateJobsBadge === 'function') updateJobsBadge();
   if (JOBS_OFFEN && typeof renderJobsPanel === 'function') renderJobsPanel();
+}
+
+// Each upload row shows its UPLOAD state as the row background colour (the 4
+// colours below) and its PRINT progress as a thin green bar like the grid video
+// tile. The status text sits in .upr-status.
+//   blue   = printer selected (ticked), before upload
+//   yellow animated = connecting
+//   yellow stepped  = upload progress (per file)
+//   green  = all files uploaded
+//   red    = no connection / a file failed
+const UPR_STATE_LBL = {RUNNING:'PRINTING',PAUSE:'PAUSED',PAUSED:'PAUSED',FAILED:'FAILED',FINISH:'DONE',IDLE:'IDLE',PREPARE:'PREPARE',SLICING:'SLICING'};
+function repaintUprRow(ip) {
+  const row = document.getElementById('srow-' + ip);
+  const head = row && row.querySelector('.upr-head');
+  if (!head) return;
+  const stEl = document.getElementById('uprst-' + ip);
+  const bar  = document.getElementById('uprpb-' + ip);
+
+  // Upload state for this printer (only while an upload runs and includes it).
+  let up = null;
+  if (UPLOAD && UPLOAD.ips && UPLOAD.ips.indexOf(ip) !== -1) up = UPLOAD.status[ip] || null;
+
+  const cb = document.querySelector('.sync-cb[data-ip="' + (window.CSS && CSS.escape ? CSS.escape(ip) : ip) + '"]');
+  const selected = !!(cb && cb.checked);
+
+  // --- Row background: the 4 upload colours, or blue when just selected. ---
+  head.classList.remove('up-connect');
+  let bg = '';
+  if (up) {
+    if (up.phase === 'connecting') {
+      head.classList.add('up-connect'); // yellow animated shimmer (CSS)
+    } else if (up.phase === 'uploading') {
+      const p = Math.round(up.pct || 0);
+      bg = 'linear-gradient(90deg, rgba(240,190,20,.42) ' + p + '%, rgba(240,190,20,.10) ' + p + '%)';
+    } else if (up.phase === 'done') {
+      bg = 'linear-gradient(0deg, rgba(0,200,120,.28), rgba(0,200,120,.28))';
+    } else if (up.phase === 'error') {
+      bg = 'linear-gradient(0deg, rgba(255,80,80,.28), rgba(255,80,80,.28))';
+    }
+  } else if (selected) {
+    bg = 'linear-gradient(0deg, rgba(80,150,255,.18), rgba(80,150,255,.18))';
+  }
+  head.style.backgroundImage = bg;
+  head.style.backgroundSize = '';
+  head.style.backgroundPosition = '';
+  head.style.backgroundRepeat = '';
+
+  // --- Print progress: thin green bar like the grid video tile. ---
+  const s = STATUS[ip] || {};
+  const st = String(s.gcode_state || '').toUpperCase();
+  const printing = st === 'RUNNING' || st === 'PAUSE' || st === 'PAUSED';
+  const prPct = Math.round(printing ? (s.progress || 0) : (st === 'FINISH' ? 100 : 0));
+  if (bar) {
+    const fill = bar.firstElementChild;
+    if (printing || prPct > 0) {
+      bar.classList.add('on');
+      if (fill) {
+        fill.style.width = prPct + '%';
+        fill.className = (st === 'PAUSE' || st === 'PAUSED') ? 'pause' : (st === 'FAILED' ? 'failed' : 'running');
+      }
+    } else {
+      bar.classList.remove('on');
+    }
+  }
+
+  // --- Status text. ---
+  const lbl = UPR_STATE_LBL[st] || st || '';
+  let txt = s.online ? (lbl + (st === 'RUNNING' ? (' ' + prPct + '%') : '')) : '';
+  // "In Reparatur" shows as the normal status with a small 🔧 marker — no pill.
+  if (typeof isRepair === 'function' && isRepair(ip)) txt = '🔧 ' + (txt || 'REPARATUR');
+  if (up) {
+    if (up.phase === 'connecting') txt = '⬆ verbinde …' + (txt ? ' · ' + txt : '');
+    else if (up.phase === 'uploading') txt = '⬆ ' + Math.round(up.pct || 0) + '%' + (txt ? ' · ' + txt : '');
+    else if (up.phase === 'done') txt = '⬆ ✓' + (txt ? ' · ' + txt : '');
+    else if (up.phase === 'error') txt = '⬆ ✗' + (txt ? ' · ' + txt : '');
+  }
+  if (stEl) stEl.textContent = txt;
+}
+function repaintUprRows() {
+  document.querySelectorAll('.upr').forEach(row => repaintUprRow(row.id.replace('srow-', '')));
 }
 
 function isAllowedPrintFile(name){
@@ -6338,56 +6870,110 @@ async function startDropSync() {
   if (!syncDropFiles.length) { toast('Keine Dateien ausgewählt', 'er'); return; }
 
   const files = syncDropFiles.slice();
-  UPLOAD = {active: true, paused: false, cancelled: false, ips: selectedIPs,
-            status: {}, done: 0, note: '', total: selectedIPs.length};
-  selectedIPs.forEach(ip => { UPLOAD.status[ip] = {text: 'Warte …', pct: 0, failed: false}; });
+  UPLOAD = {active: true, paused: false, cancelled: false, ips: selectedIPs.slice(),
+            status: {}, done: 0, note: '', total: selectedIPs.length, _abort: null};
+  selectedIPs.forEach(ip => { UPLOAD.status[ip] = {phase:'connecting', done:0, total:files.length, pct:0, failed:false, text:'startet …'}; });
+  renderUploadProgress(); // immediate feedback in the rows the moment Upload is clicked
 
   const btn = document.getElementById('syncUploadBtn');
   if (btn) btn.disabled = true;
   const pb = document.getElementById('syncPauseBtn');
   if (pb) pb.textContent = '⏸ Pause';
-  renderUploadProgress();
   busyStart('lädt hoch …');
 
   try {
     for (const ip of selectedIPs) {
+      await waitWhilePaused();
       if (UPLOAD.cancelled) break;
-      let errors = 0;
-      for (let fi = 0; fi < files.length; fi++) {
-        await waitWhilePaused();
-        if (UPLOAD.cancelled) break;
-        const file = files[fi];
-        UPLOAD.status[ip] = {text: '⟳ ' + file.name, pct: fi / files.length * 100, failed: false};
-        renderUploadProgress();
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-          const r = await fetch('/api/sync/upload?ip=' + encodeURIComponent(ip), {method: 'POST', body: formData});
-          const res = await r.json();
-          if (!r.ok || res.error) throw new Error(res.error || 'Fehler');
-        } catch(e) {
-          errors++;
-          UPLOAD.status[ip] = {text: '✗ ' + (e.message || 'Fehler'), pct: (fi + 1) / files.length * 100, failed: true};
-        }
-        if (!errors) UPLOAD.status[ip].pct = (fi + 1) / files.length * 100;
-        renderUploadProgress();
-      }
-      if (UPLOAD.cancelled) { UPLOAD.status[ip] = {text: 'abgebrochen', pct: 0, failed: true}; break; }
-      if (!errors) UPLOAD.status[ip] = {text: '✓ ' + files.length + ' Datei(en)', pct: 100, failed: false};
-      UPLOAD.done++;
+      await uploadToPrinter(ip, files);
+      if (!UPLOAD.status[ip].failed) UPLOAD.done++;
       renderUploadProgress();
     }
   } finally {
     busyEnd();
     const cancelled = UPLOAD.cancelled;
+    const skipped = UPLOAD.ips.filter(ip => UPLOAD.status[ip] && UPLOAD.status[ip].skipped).length;
     UPLOAD.active = false;
-    UPLOAD.note = cancelled ? '✕ abgebrochen nach ' + UPLOAD.done + ' Drucker(n)'
-                            : '✓ ' + UPLOAD.done + ' Drucker fertig';
+    UPLOAD.note = (cancelled ? '✕ abgebrochen nach ' + UPLOAD.done + ' Drucker(n)'
+                             : '✓ ' + UPLOAD.done + ' Drucker fertig')
+                + (skipped ? ' · ' + skipped + ' offline übersprungen' : '');
     renderUploadProgress();
     if (btn) btn.disabled = false;
     loadUploadLog();
     toast(cancelled ? 'Upload abgebrochen' : 'Upload abgeschlossen ✓', cancelled ? 'er' : 'ok');
   }
+}
+
+// uploadToPrinter sends ALL files for one printer in a SINGLE request to
+// /api/sync/uploadmany (one FTP session server-side) and reads the NDJSON
+// stream it returns, so the row shows live per-file steps. The phases drive the
+// 4 background colours (connecting → uploading → done / error).
+async function uploadToPrinter(ip, files) {
+  const st = UPLOAD.status[ip];
+  // Offline printers are skipped outright — no point waiting out a 15s connect
+  // timeout per device, and nothing can be uploaded anyway.
+  const s = STATUS[ip];
+  if (!(s && s.online)) {
+    st.phase = 'error'; st.failed = true; st.skipped = true; st.pct = 0;
+    st.text = '⨯ offline – übersprungen';
+    renderUploadProgress();
+    return;
+  }
+  st.phase = 'connecting'; st.text = 'verbinde …'; st.pct = 0; st.done = 0; st.total = files.length; st.failed = false;
+  renderUploadProgress();
+
+  const fd = new FormData();
+  files.forEach(f => fd.append('file', f));
+  const ctrl = new AbortController();
+  UPLOAD._abort = ctrl;
+  let gotLine = false, anyError = false, lastErr = '';
+  try {
+    const r = await fetch('/api/sync/uploadmany?ip=' + encodeURIComponent(ip), {method:'POST', body: fd, signal: ctrl.signal});
+    if (!r.ok || !r.body) {
+      let msg = 'HTTP ' + r.status;
+      try { const j = await r.json(); if (j && j.error) msg = j.error; } catch(e){}
+      throw new Error(msg);
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream:true});
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line) continue;
+        let rec; try { rec = JSON.parse(line); } catch(e) { continue; }
+        gotLine = true;
+        if (typeof rec.done === 'number') st.done = rec.done;
+        if (typeof rec.total === 'number') st.total = rec.total;
+        if (rec.error) { anyError = true; lastErr = rec.error; }
+        if (!rec.complete) {
+          if (rec.ok === false) { anyError = true; if (rec.error) lastErr = rec.error; }
+          st.phase = 'uploading';
+          st.pct = st.total ? Math.round(st.done / st.total * 100) : 0;
+          const base = String(rec.remote || '').split('/').pop();
+          st.text = (rec.ok === false ? '✗ ' : '⟳ ') + base;
+          renderUploadProgress();
+        }
+      }
+    }
+  } catch(e) {
+    anyError = true;
+    lastErr = (UPLOAD.cancelled ? 'abgebrochen' : ((e && e.message) || String(e)));
+  }
+  if (anyError || !gotLine) {
+    st.phase = 'error'; st.failed = true;
+    st.pct = st.total ? Math.round(st.done / st.total * 100) : 0;
+    st.text = '✗ ' + (lastErr || 'keine Verbindung');
+  } else {
+    st.phase = 'done'; st.failed = false; st.pct = 100; st.done = st.total;
+    st.text = '✓ ' + st.total + ' Datei(en)';
+  }
+  UPLOAD._abort = null;
+  renderUploadProgress();
 }
 
 // ─── SD CARD BROWSER ──────────────────────────────────────────────────────────
@@ -7430,8 +8016,33 @@ function startTickers() {
   tickers.push(setInterval(loadErrors, 5000));
   tickers.push(setInterval(loadStatus, 30000));
 }
-function flt(q){SQ=q.toLowerCase();renderGrid();if(CURRENT_SUBVIEW==='list')renderList();}
+function flt(q){
+  SQ=q.toLowerCase();
+  const hs=document.getElementById('header-search'); if(hs) hs.classList.toggle('searching', !!SQ);
+  const cl=document.getElementById('hs-clear'); if(cl) cl.style.display = SQ ? '' : 'none';
+  updateSearchActiveHint();
+  renderGrid();
+  if(CURRENT_SUBVIEW==='list')renderList();
+}
+// updateSearchActiveHint shows a banner in the overview whenever a search term
+// is set, so switching models while a term lingers doesn't look empty for no
+// reason. SQ is the lower-cased term; show the user's original text.
+function updateSearchActiveHint(){
+  const box = document.getElementById('search-active-hint');
+  if (!box) return;
+  const inp = document.getElementById('searchInput');
+  const term = inp ? (inp.value || '').trim() : SQ;
+  if (SQ){
+    const t2 = document.getElementById('search-active-term');
+    if (t2) t2.textContent = term;
+    box.style.display = '';
+  } else {
+    box.style.display = 'none';
+  }
+}
+function clearSearch(){ const i=document.getElementById('searchInput'); if(i){ i.value=''; } flt(''); if(i) i.focus(); }
 function sv(v){
+  closeActionModal(); // navigating to a main view closes any open action modal
   document.querySelectorAll('.view').forEach(e=>setShown(e, false));
   document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
   // 'grid' and 'list' are sub-views inside view-uebersicht
@@ -7448,12 +8059,127 @@ function sv(v){
   if (v==='setup') renderYaml();
   if (v==='list') renderList();
   if (v==='uebersicht') { setView('grid'); resumeMedia(); }
-  if (v==='sync'){loadSyncConfig();pollSyncStatus();loadSDList();initSyncUpload();loadUploadLog();}
+  if (v==='sync'){loadSyncConfig();pollSyncStatus();loadSDList();initSyncUpload();}
   // Jobs is its own page now (no side slider). JOBS_OFFEN drives whether the
   // running-jobs list re-renders on the 3s poll.
   JOBS_OFFEN = (v==='jobs');
-  if (v==='jobs'){ loadJobs(); renderJobsPanel(); loadPlan(); }
+  if (v==='jobs'){ loadJobs(); renderJobsPanel(); loadPlan(); loadUploadLog(); }
 }
+
+// ── Action modal (Add Printer / Upload File) ────────────────────────────────
+// Add Printer and Upload File are actions, not destinations. Instead of their
+// own full-page views they open in an overlay on top of the current Grid/Liste
+// view. The existing view-import / view-sync markup is reused: it is moved into
+// the modal body on open and moved back into <main> on close, so all their
+// existing handlers keep working unchanged.
+// Add Printer and Upload File share ONE modal with two tabs. Both views
+// (view-import, view-sync) are moved into the modal body ONCE at startup
+// (hostActionViews), before the grid is rendered — so the grid DOM is never
+// touched when the modal opens/closes. That was the cause of the "all printers
+// disappear" bug: the views used to be moved in and out of <main> on every
+// open/close.
+let ACTION_MODAL_OPEN = false;
+function hostActionViews(){
+  const body = byId('amx-body'); if (!body) return;
+  ['view-import','view-sync'].forEach(id => { const v = byId(id); if (v) { body.appendChild(v); setShown(v, false); } });
+  // The ONE shared printer list lives below both tabs — move it out of the
+  // File-Sync view so Add-Printer and File-Sync show the exact same list.
+  const shared = byId('sharedPrinterList');
+  if (shared) body.appendChild(shared);
+}
+function openActionModal(which){
+  const modal = byId('action-modal'); if (!modal) return;
+  modal.style.display = 'flex';
+  document.body.classList.add('modal-open'); // freeze background scroll
+  ACTION_MODAL_OPEN = true;
+  const chip = byId('amx-restore'); if (chip) chip.style.display = 'none';
+  renderSyncModelPills();  // model filter sits in the shared list → both tabs
+  renderSyncPrinterList(); // populate the shared list (both tabs)
+  switchActionTab(which || 'import');
+}
+// minimizeActionModal hides the modal WITHOUT cancelling anything (an upload
+// keeps running). A restore chip appears so the user can bring it back. This is
+// deliberately different from ✕/closeActionModal, which the user might expect to
+// abort — minimizing makes clear the upload continues in the background.
+let ACTION_MODAL_TAB = 'import';
+function minimizeActionModal(){
+  const modal = byId('action-modal'); if (modal) modal.style.display = 'none';
+  document.body.classList.remove('modal-open');
+  const chip = byId('amx-restore');
+  if (chip){
+    const up = (typeof uploadRunning === 'function' && uploadRunning());
+    chip.textContent = (ACTION_MODAL_TAB === 'sync')
+      ? (up ? '⬆ Upload läuft … (öffnen)' : '⬆ Datei hochladen (öffnen)')
+      : '➕ Drucker hinzufügen (öffnen)';
+    chip.style.display = '';
+  }
+}
+function restoreActionModal(){
+  const modal = byId('action-modal'); if (modal) modal.style.display = 'flex';
+  document.body.classList.add('modal-open');
+  const chip = byId('amx-restore'); if (chip) chip.style.display = 'none';
+  renderSyncPrinterList();
+}
+function switchActionTab(which){
+  const isImport = (which !== 'sync');
+  ACTION_MODAL_TAB = isImport ? 'import' : 'sync';
+  const imp = byId('view-import'), syn = byId('view-sync');
+  if (imp) setShown(imp, isImport);
+  if (syn) setShown(syn, !isImport);
+  const ti = byId('amx-tab-import'), ts = byId('amx-tab-sync');
+  if (ti) ti.classList.toggle('active', isImport);
+  if (ts) ts.classList.toggle('active', !isImport);
+  // Highlight the matching header entry too.
+  const hi = byId('tab-import'), hs = byId('tab-sync');
+  if (hi) hi.classList.toggle('active', isImport);
+  if (hs) hs.classList.toggle('active', !isImport);
+  // Init the File-Sync view when its tab is shown (upload history now lives in Jobs).
+  if (!isImport) { loadSyncConfig(); pollSyncStatus(); loadSDList(); initSyncUpload(); }
+}
+function closeActionModal(){
+  const modal = byId('action-modal');
+  if (modal) modal.style.display = 'none';
+  document.body.classList.remove('modal-open');
+  ACTION_MODAL_OPEN = false;
+  const imp = byId('view-import'), syn = byId('view-sync');
+  if (imp) setShown(imp, false);
+  if (syn) setShown(syn, false);
+  ['tab-import','tab-sync'].forEach(id => { const e = byId(id); if (e) e.classList.remove('active'); });
+}
+// Esc closes the action modal.
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && ACTION_MODAL_OPEN) closeActionModal(); });
+
+// A file dropped OUTSIDE a real drop zone otherwise makes the browser navigate
+// to it (opens a new tab trying to display the file). Swallow those window-wide
+// so a near-miss never leaves the app. Real drop zones handle their own events.
+['dragover','drop'].forEach(ev => window.addEventListener(ev, e => {
+  const dt = e.dataTransfer;
+  if (!dt || !Array.prototype.includes.call(dt.types || [], 'Files')) return;
+  if (e.target && e.target.closest && e.target.closest('.drop-zone, .dz, #syncDropZone, #dz')) return;
+  e.preventDefault();
+}, false));
+
+// ── Non-blocking text prompt ────────────────────────────────────────────────
+// Promise-based replacement for window.prompt(). prompt() blocks the whole page
+// (snapshot timers pause and then all fire together on dismiss, which looked
+// like "all snapshots restarted"). This dialog keeps the page running.
+let ASK_RESOLVE = null;
+function askText(title, preset){
+  return new Promise(resolve => {
+    ASK_RESOLVE = resolve;
+    const t2 = byId('ask-title'); if (t2) t2.textContent = title || '';
+    const inp = byId('ask-input'); if (inp) inp.value = preset || '';
+    const m = byId('ask-modal'); if (m) m.style.display = 'flex';
+    if (inp) setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  });
+}
+function askTextClose(val){
+  const m = byId('ask-modal'); if (m) m.style.display = 'none';
+  const r = ASK_RESOLVE; ASK_RESOLVE = null;
+  if (r) r(val);
+}
+function askTextOk(){ askTextClose((byId('ask-input') && byId('ask-input').value) || ''); }
+function askTextCancel(){ askTextClose(null); }
 
 // ─── FILE DROP ────────────────────────────────────────────────────────────────
 const dz=document.getElementById('dz');
@@ -7663,6 +8389,16 @@ function toggleSearch() {
   startSearch();
 }
 
+// clearFileSearch empties the file-search field and wipes its results, so the
+// term can be cleared right from the search bar and all printers come back.
+function clearFileSearch() {
+  if (SEARCH_JOB) stopSearch();
+  const i = document.getElementById('fileSearch'); if (i) i.value = '';
+  clearSearchResults();
+  if (typeof collapseAllUpr === 'function') collapseAllUpr();
+  onSearchTyping();
+}
+
 async function startSearch() {
   const q = (document.getElementById('fileSearch').value || '').trim();
   if (q.length < 3) return;
@@ -7759,24 +8495,25 @@ async function pollSearch() {
   const touched = new Set((d.hits || []).map(h => h.ip));
   touched.forEach(renderPrinterHits);
   (d.failed || []).forEach(f => markPrinterFailed(f.ip, f.error));
+  updateSelBar(); // show the selection bar as soon as there are hits (not only after a tick)
 
   const pct = d.total ? Math.round(d.done / d.total * 100) : 0;
   document.getElementById('searchBar').style.setProperty('--w', pct + '%');
   document.getElementById('fileSearchStatus').textContent =
-    d.done + ' von ' + d.total + ' Druckern · ' + d.total_hits + ' Treffer'
-    + (d.total_failed ? ' · ' + d.total_failed + ' nicht erreichbar' : '');
+    d.done + ' / ' + d.total + ' ' + t('fsPrinters') + ' · ' + d.total_hits + ' ' + t('fsHits')
+    + (d.total_failed ? ' · ' + d.total_failed + ' ' + t('fsUnreach') : '');
 
   if (!d.complete) return;
   clearInterval(SEARCH_POLL); SEARCH_POLL = null;
   SEARCH_JOB = null;
   setSearchRunning(false);
   document.getElementById('fileSearchStatus').textContent =
-    (d.stopped ? 'abgebrochen — ' : '') + d.total_hits + ' Treffer auf ' + d.done + ' Druckern'
-    + (d.total_failed ? ', ' + d.total_failed + ' nicht erreichbar' : '');
+    (d.stopped ? t('fsStopped') + ' — ' : '') + d.total_hits + ' ' + t('fsHits') + ' / ' + d.done + ' ' + t('fsPrinters')
+    + (d.total_failed ? ', ' + d.total_failed + ' ' + t('fsUnreach') : '');
   // Mark printers without hits
   syncFilteredPrinters().forEach(p => {
     const el = document.getElementById('sdhits-' + p.ip);
-    if (el && !el.textContent) { el.textContent = 'keine Treffer'; el.className = 'sd-hitcount none'; }
+    if (el && !el.textContent) { el.textContent = t('fsNoHits'); el.className = 'sd-hitcount none'; }
   });
 }
 
@@ -7789,7 +8526,8 @@ function renderPrinterHits(ip) {
   const box = document.getElementById('sdsearch-' + ip);
   const count = document.getElementById('sdhits-' + ip);
   const hits = hitsOf(ip);
-  if (count) { count.textContent = hits.length + ' Treffer'; count.className = 'sd-hitcount'; }
+  if (count) { count.textContent = hits.length + ' ' + t('fsHits'); count.className = 'sd-hitcount'; }
+  if (hits.length) openUpr(ip); // show results: expand the collapsible row
   if (!box) return;
   box.innerHTML = hits.map(h => {
     const k = searchKey(h.ip, h.file);
@@ -7804,7 +8542,7 @@ function renderPrinterHits(ip) {
 
 function markPrinterFailed(ip, reason) {
   const count = document.getElementById('sdhits-' + ip);
-  if (count) { count.textContent = 'nicht erreichbar'; count.className = 'sd-hitcount fail'; count.title = reason || ''; }
+  if (count) { count.textContent = t('fsUnreach'); count.className = 'sd-hitcount fail'; count.title = reason || ''; }
 }
 
 
@@ -7828,13 +8566,13 @@ function updateSelBar() {
   const any = Object.keys(SEARCH_HITS).length > 0;
   setShown(bar, any);
   const printers = new Set([...SEARCH_SEL].map(k => k.split('\u0000')[0]));
-  setText('searchSelCount', SEARCH_SEL.size ? (SEARCH_SEL.size + ' Datei(en) auf ' + printers.size + ' Drucker(n) ausgewählt') : 'nichts ausgewählt');
+  setText('searchSelCount', SEARCH_SEL.size ? (SEARCH_SEL.size + ' ' + t('fsFiles') + ' / ' + printers.size + ' ' + t('fsPrinters') + ' ' + t('selected')) : t('fsNothingSel'));
 }
 
 let DEL_JOB = null, DEL_POLL = null;
 
 async function deleteSelectedHits() {
-  if (!SEARCH_SEL.size) { toast('Nichts ausgewählt', 'er'); return; }
+  if (!SEARCH_SEL.size) { toast(t('fsNothingSel'), 'er'); return; }
   const items = [...SEARCH_SEL].map(k => { const [ip, file] = k.split('\u0000'); return {ip, file}; });
   const printers = new Set(items.map(i => i.ip));
 

@@ -507,6 +507,13 @@ func (m *MQTTManager) handleMessage(ip string, payload []byte) {
 			}
 		}
 	}
+	// Record error events (FAILED / print_error / HMS) into the per-printer
+	// history. Deduped inside, so an ongoing error is logged only once.
+	histFile := s.SubtaskName
+	if histFile == "" {
+		histFile = s.GcodeFile
+	}
+	recordHistory(ip, histFile, s)
 	m.mu.Unlock()
 }
 

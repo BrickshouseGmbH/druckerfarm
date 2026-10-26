@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -21,6 +22,14 @@ import (
 // process still hangs, it is killed so it cannot keep an FTP session open on the
 // printer (which would pile up toward the "421 too many connections" limit).
 const ftpProcTimeout = 45 * time.Second
+
+// ftpXferTimeout is the (much longer) backstop for operations that legitimately
+// move a lot of data — downloading a whole .gcode.3mf for the preview, a deep
+// directory scan. The old 45s backstop would hard-KILL such a transfer mid-way,
+// and a killed process never runs its `finally: quit()`, so the FTP session was
+// left half-open on the printer and piled up toward "421 too many connections".
+// Giving real transfers room to finish cleanly is a core part of the 421 fix.
+const ftpXferTimeout = 10 * time.Minute
 
 // ftpCommand builds the Python FTP command bound to a context that kills the
 // process when the timeout elapses.
@@ -647,16 +656,43 @@ def main():
     p.add_argument('--path', default='/')
     p.add_argument('--out', default='')
     p.add_argument('--depth', default='1')
+    p.add_argument('--outdir', default='')
+    p.add_argument('--plate', default='1')
+    p.add_argument('--manifest', default='')
     args = p.parse_args()
 
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
-    ftp = ImplicitFTP_TLS(context=ctx)
-    ftp.connect(args.ip, 990, timeout=15)
-    ftp.prot_p()
-    ftp.login('bblp', args.code)
+    # Connect with a short 421 retry: if the printer still has a stale session
+    # from a previous attempt it answers "421 too many connections" before TLS.
+    # Waiting a moment lets vsftpd free the slot instead of failing outright.
+    import time as _time
+    ftp = None
+    last = None
+    for _attempt in range(4):
+        try:
+            ftp = ImplicitFTP_TLS(context=ctx)
+            ftp.connect(args.ip, 990, timeout=15)
+            ftp.prot_p()
+            ftp.login('bblp', args.code)
+            last = None
+            break
+        except Exception as e:
+            last = e
+            msg = str(e).lower()
+            try:
+                ftp.close()
+            except Exception:
+                pass
+            ftp = None
+            if '421' in msg or 'too many' in msg:
+                _time.sleep(2 + _attempt)
+                continue
+            break
+    if ftp is None:
+        raise last if last else RuntimeError('FTP connect failed')
 
     # Everything below runs inside a try/finally so the control connection is
     # ALWAYS closed cleanly (QUIT, or CLOSE if QUIT fails) — even on an error.
@@ -791,8 +827,77 @@ def run_action(ftp, args):
         except: pass
         print(json.dumps(result))
 
+    elif args.action == 'colors':
+        # Read the filament colours a .3mf needs (the slice's filament_colour).
+        import io, zipfile, json as _json, re as _re
+        buf = io.BytesIO()
+        ftp.retrbinary('RETR ' + args.path, buf.write)
+        buf.seek(0)
+        cols = []
+        try:
+            with zipfile.ZipFile(buf) as z:
+                for n in z.namelist():
+                    nl = n.lower()
+                    if not nl.endswith('.config'):
+                        continue
+                    if 'project_settings' not in nl and 'slice_info' not in nl:
+                        continue
+                    try:
+                        data = z.read(n).decode('utf-8', 'ignore')
+                    except Exception:
+                        continue
+                    # JSON (project_settings.config): "filament_colour": ["#RRGGBB", ...]
+                    try:
+                        obj = _json.loads(data)
+                        fc = obj.get('filament_colour') or obj.get('filament_color')
+                        if isinstance(fc, list) and fc:
+                            cols = [str(c) for c in fc]
+                            break
+                    except Exception:
+                        pass
+                    # XML (slice_info.config): color="#RRGGBB"
+                    m = _re.findall(r'color="(#?[0-9A-Fa-f]{6,8})"', data)
+                    if m:
+                        cols = m
+                        break
+        except Exception as e:
+            sys.stderr.write('colors: ' + str(e) + chr(10))
+        out = []
+        for c in cols:
+            c = str(c).strip()
+            if not c.startswith('#'):
+                c = '#' + c
+            out.append(c[:9] if len(c) >= 9 else c[:7])
+        print(_json.dumps(out))
+
     elif args.action == 'stor':
         ftp.storbinary('STOR ' + args.path, sys.stdin.buffer)
+
+    elif args.action == 'stormany':
+        # Upload MANY files over the SAME, already-open FTP session. The manifest
+        # (JSON: [{"local":"...","remote":"..."}]) is read from --manifest. One
+        # connection for the whole batch is the single biggest lever against the
+        # printer's "421 too many connections" — instead of connect/STOR/quit per
+        # file, we connect once and STOR each. A JSON progress line is printed and
+        # FLUSHED after every file so the UI can show per-file steps live.
+        with open(args.manifest, 'r', encoding='utf-8') as mf:
+            items = json.load(mf)
+        total = len(items)
+        done = 0
+        for it in items:
+            remote = it.get('remote', '')
+            local = it.get('local', '')
+            rec = {'remote': remote, 'ok': False, 'done': done, 'total': total}
+            try:
+                with open(local, 'rb') as fh:
+                    ftp.storbinary('STOR ' + remote, fh)
+                rec['ok'] = True
+                done += 1
+                rec['done'] = done
+            except Exception as e:
+                rec['error'] = str(e)
+            sys.stdout.write(json.dumps(rec) + '\n')
+            sys.stdout.flush()
 
     elif args.action == 'thumb':
         # Download the .3mf into memory and pull out the plate preview PNG
@@ -824,6 +929,50 @@ def run_action(ftp, args):
                 f.write(data)
         else:
             sys.stdout.buffer.write(data)
+
+    elif args.action == 'stat':
+        # Cheap change-detector: file SIZE + modified time (MDTM) WITHOUT
+        # downloading the file. Lets the preview cache tell a re-uploaded,
+        # overwritten file (same name, new content) apart from a cache hit.
+        size = -1
+        mtime = ''
+        try:
+            size = ftp.size(args.path)
+        except Exception:
+            pass
+        try:
+            r = ftp.sendcmd('MDTM ' + args.path)  # '213 YYYYMMDDHHMMSS'
+            mtime = r.split()[-1]
+        except Exception:
+            pass
+        sys.stdout.write(str(size) + ' ' + str(mtime))
+
+    elif args.action == 'extract':
+        # Download the .3mf / .gcode.3mf ONCE and write EVERY full-size plate
+        # render (Metadata/plate_N.png) into --outdir as N.png. Prints the list
+        # of plate numbers as JSON. One download serves all plates and all later
+        # opens (served from the PC cache) until the file changes.
+        import io, zipfile, re  # os and json are module-level — re-importing them here would shadow them in main()
+        buf = io.BytesIO()
+        ftp.retrbinary('RETR ' + args.path, buf.write)
+        buf.seek(0)
+        plates = []
+        try:
+            os.makedirs(args.outdir, exist_ok=True)
+            with zipfile.ZipFile(buf) as z:
+                pat = re.compile(r'^metadata/plate_(\d+)\.png$')
+                found = {}
+                for n in z.namelist():
+                    m = pat.match(n.lower())
+                    if m:
+                        found[int(m.group(1))] = n
+                for num in sorted(found):
+                    with open(os.path.join(args.outdir, str(num) + '.png'), 'wb') as f:
+                        f.write(z.read(found[num]))
+                    plates.append(num)
+        except Exception as e:
+            sys.stderr.write('extract: ' + str(e) + chr(10))
+        sys.stdout.write(json.dumps({'plates': plates}))
 
 main()
 `
@@ -926,31 +1075,52 @@ func runPythonFTP(args []string) (string, error) {
 	}
 	defer os.Remove(script)
 
-	// Only one FTP session per printer at a time (see ftpgate.go) — avoids the
-	// vsftpd per-IP connection limit that answers with "421 too many connections".
-	unlock := lockFTP(argIP(args))
+	ip := argIP(args)
+	// Circuit breaker: a printer that just kept answering 421 is left alone for a
+	// few minutes instead of being hammered further (D-FTP-D).
+	if until, blocked := ftpBlockedUntil(ip); blocked {
+		return "", fmt.Errorf("FTP für diesen Drucker ist kurz pausiert (zu viele Verbindungen) — automatisch wieder ab %s. Kein Neustart nötig.", until.Format("15:04:05"))
+	}
+
+	// Only one FTP session per printer at a time + per-printer cool-down (see
+	// ftpgate.go) — avoids the vsftpd per-IP limit ("421 too many connections").
+	unlock := lockFTP(ip)
 	defer unlock()
 
-	// On a 421 the printer is momentarily out of connection slots; wait briefly
-	// and retry instead of failing. This call has no stdin, so retrying is safe.
-	for attempt := 0; ; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), ftpProcTimeout)
-		cmd := ftpCommand(ctx, script, args)
-		out, err := cmd.Output()
-		cancel()
-		if err == nil {
-			return string(out), nil
-		}
-		raw := err.Error()
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			raw = string(exitErr.Stderr)
-		}
-		if is421(raw) && attempt < len(ftpRetryDelays) {
-			time.Sleep(ftpRetryDelays[attempt])
-			continue
-		}
-		return "", fmt.Errorf("%s", friendlyFTPError(raw))
+	// Farm-wide ceiling on top of the per-printer lock (see ftpgate.go).
+	releaseSlot := acquireFTPSlot()
+	defer releaseSlot()
+
+	// Transfers that legitimately take long (whole-file download, deep scan) get
+	// the long backstop so they are never hard-killed mid-session; everything
+	// else keeps the short one. A single attempt only — the Python helper already
+	// does a gentle 421 connect-retry internally, so re-running the whole process
+	// here would just open more connections against an already-full printer.
+	timeout := ftpProcTimeout
+	if a := firstArg(args); a == "extract" || a == "retr" || a == "scan" {
+		timeout = ftpXferTimeout
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := ftpCommand(ctx, script, args)
+	out, err := cmd.Output()
+	if err == nil {
+		ftpNoteOK(ip)
+		return string(out), nil
+	}
+	raw := err.Error()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		raw = string(exitErr.Stderr)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		log.Printf("FTP %q auf %s nach %s abgebrochen — mögliche haengende Sitzung auf dem Drucker", firstArg(args), ip, timeout)
+	}
+	if is421(raw) {
+		ftpNote421(ip)
+	} else {
+		ftpNoteOK(ip)
+	}
+	return "", fmt.Errorf("%s", friendlyFTPError(raw))
 }
 
 func runPythonFTPWithInput(args []string, r io.Reader) error {
@@ -960,16 +1130,31 @@ func runPythonFTPWithInput(args []string, r io.Reader) error {
 	}
 	defer os.Remove(script)
 
-	unlock := lockFTP(argIP(args))
+	ip := argIP(args)
+	if until, blocked := ftpBlockedUntil(ip); blocked {
+		return fmt.Errorf("FTP für diesen Drucker ist kurz pausiert (zu viele Verbindungen) — automatisch wieder ab %s. Kein Neustart nötig.", until.Format("15:04:05"))
+	}
+
+	unlock := lockFTP(ip)
 	defer unlock()
 
+	// Farm-wide ceiling on top of the per-printer lock (see ftpgate.go).
+	releaseSlot := acquireFTPSlot()
+	defer releaseSlot()
+
+	// No ctx deadline here: this is a (streaming) upload and must never be
+	// hard-killed mid-transfer, which would leave a half-open session behind.
 	cmd := exec.Command(findPython(), append([]string{script}, args...)...)
 	hideWindow(cmd)
 	cmd.Stdin = r
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if is421(string(out)) {
+			ftpNote421(ip)
+		}
 		return fmt.Errorf("Upload fehlgeschlagen: %s", friendlyFTPError(string(out)))
 	}
+	ftpNoteOK(ip)
 	return nil
 }
 
@@ -1236,6 +1421,200 @@ func handleSyncUpload(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"ok":true,"file":"` + header.Filename + `"}`))
 }
 
+// handleSyncUploadMany uploads ALL of one printer's files over a SINGLE FTP
+// session and streams one NDJSON line per file as it completes. Reusing one
+// connection for the whole batch is the main defence against the printer's
+// "421 too many connections" — the old one-request-per-file path opened (and
+// had to free) a fresh session for every file.
+//
+// Request:  POST /api/sync/uploadmany?ip=<ip>   multipart, one or more "file".
+// Response: application/x-ndjson, one object per file:
+//
+//	{"remote":"/name.3mf","ok":true,"done":1,"total":3}
+//	{"done":3,"total":3,"complete":true}         // final summary line
+func handleSyncUploadMany(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", 405)
+		return
+	}
+	ip := r.URL.Query().Get("ip")
+	if ip == "" {
+		http.Error(w, `{"error":"ip required"}`, 400)
+		return
+	}
+	mu.Lock()
+	var printer *Printer
+	for i, p := range state.Printers {
+		if p.IP == ip {
+			printer = &state.Printers[i]
+			break
+		}
+	}
+	mu.Unlock()
+	if printer == nil {
+		http.Error(w, `{"error":"printer not found"}`, 404)
+		return
+	}
+	if until, blocked := ftpBlockedUntil(ip); blocked {
+		http.Error(w, `{"error":"FTP für diesen Drucker ist kurz pausiert (zu viele Verbindungen) — wieder ab `+until.Format("15:04:05")+`"}`, 503)
+		return
+	}
+	if err := r.ParseMultipartForm(400 << 20); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, 400)
+		return
+	}
+	headers := r.MultipartForm.File["file"]
+	if len(headers) == 0 {
+		http.Error(w, `{"error":"no files"}`, 400)
+		return
+	}
+
+	sdPath := syncCfg.SDPath
+	if sdPath == "" {
+		sdPath = "/"
+	}
+	if !strings.HasSuffix(sdPath, "/") {
+		sdPath += "/"
+	}
+
+	// Save every uploaded part to a temp file and build the manifest the Python
+	// helper reads. Temp files (and the manifest) are removed at the end.
+	type manItem struct {
+		Local  string `json:"local"`
+		Remote string `json:"remote"`
+	}
+	var manifest []manItem
+	var tmpFiles []string
+	cleanup := func() {
+		for _, f := range tmpFiles {
+			_ = os.Remove(f)
+		}
+	}
+	defer cleanup()
+
+	names := make([]string, 0, len(headers))
+	for _, h := range headers {
+		lname := strings.ToLower(h.Filename)
+		if !strings.HasSuffix(lname, ".gcode") && !strings.HasSuffix(lname, ".3mf") {
+			continue // skip junk; only print files belong on the SD
+		}
+		src, err := h.Open()
+		if err != nil {
+			continue
+		}
+		tmp, err := os.CreateTemp("", "printerfarm_upm_*_"+h.Filename)
+		if err != nil {
+			src.Close()
+			continue
+		}
+		_, cerr := io.Copy(tmp, src)
+		tmp.Close()
+		src.Close()
+		if cerr != nil {
+			_ = os.Remove(tmp.Name())
+			continue
+		}
+		tmpFiles = append(tmpFiles, tmp.Name())
+		manifest = append(manifest, manItem{Local: tmp.Name(), Remote: sdPath + h.Filename})
+		names = append(names, h.Filename)
+	}
+	if len(manifest) == 0 {
+		http.Error(w, `{"error":"Falsches Dateiformat: nur .gcode / .3mf erlaubt"}`, 400)
+		return
+	}
+
+	manBytes, _ := json.Marshal(manifest)
+	manFile, err := os.CreateTemp("", "printerfarm_manifest_*.json")
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, 500)
+		return
+	}
+	manFile.Write(manBytes)
+	manFile.Close()
+	tmpFiles = append(tmpFiles, manFile.Name())
+
+	script, err := writePyScript()
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, 500)
+		return
+	}
+	defer os.Remove(script)
+
+	// Hold the per-printer lock and ONE farm-wide slot for the whole batch, so
+	// this printer keeps a single FTP session for all its files and no other FTP
+	// work runs meanwhile.
+	unlock := lockFTP(ip)
+	defer unlock()
+	releaseSlot := acquireFTPSlot()
+	defer releaseSlot()
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-store")
+	flusher, _ := w.(http.Flusher)
+
+	args := []string{"stormany", "--ip", ip, "--code", printer.Code, "--manifest", manFile.Name()}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Minute)
+	defer cancel()
+	cmd := ftpCommand(ctx, script, args)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		w.Write([]byte(`{"error":"` + err.Error() + `","complete":true}` + "\n"))
+		return
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		w.Write([]byte(`{"error":"` + err.Error() + `","complete":true}` + "\n"))
+		return
+	}
+
+	start := time.Now()
+	okCount := 0
+	sc := bufio.NewScanner(stdout)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Bytes()
+		// Mirror each per-file line to the client immediately.
+		w.Write(line)
+		w.Write([]byte("\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		var rec struct {
+			Remote string `json:"remote"`
+			OK     bool   `json:"ok"`
+			Error  string `json:"error"`
+		}
+		if json.Unmarshal(line, &rec) == nil && rec.Remote != "" {
+			base := rec.Remote
+			if i := strings.LastIndex(base, "/"); i >= 0 {
+				base = base[i+1:]
+			}
+			e := UploadEntry{IP: ip, Name: printer.Name, Datei: base}
+			if rec.OK {
+				e.Erfolg = true
+				okCount++
+			} else {
+				e.Fehler = friendlyFTPError(rec.Error)
+			}
+			e.Dauer = time.Since(start).Milliseconds()
+			noteUpload(e)
+		}
+	}
+	werr := cmd.Wait()
+
+	final := map[string]any{"done": okCount, "total": len(manifest), "complete": true}
+	if werr != nil && okCount == 0 {
+		final["error"] = friendlyFTPError(stderr.String())
+	}
+	fb, _ := json.Marshal(final)
+	w.Write(fb)
+	w.Write([]byte("\n"))
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
 func handleSyncDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "DELETE only", 405)
@@ -1406,6 +1785,10 @@ func runPythonFTPOut(args []string, stdin io.Reader) (string, error) {
 
 	unlock := lockFTP(argIP(args))
 	defer unlock()
+
+	// Farm-wide ceiling on top of the per-printer lock (see ftpgate.go).
+	releaseSlot := acquireFTPSlot()
+	defer releaseSlot()
 
 	cmd := exec.Command(findPython(), append([]string{script}, args...)...)
 	hideWindow(cmd)

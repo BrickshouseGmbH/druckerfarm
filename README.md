@@ -86,13 +86,13 @@ Druckerfarm is portable — there is no installer and nothing is written to the 
 
 ## 🌍 Translations
 
-The interface ships in German and English. Translations live in editable JSON files under `lang/` and are compiled into the program. To adjust or extend them, edit `lang/de.json`, `lang/en.json` or `lang/de-en.json` and rebuild — see `lang/README.md`.
+The interface ships in German and English. Translations live in editable JSON files under `app/lang/` and are compiled into the program. To adjust or extend them, edit `app/lang/de.json`, `app/lang/en.json` or `app/lang/de-en.json` and rebuild — see `app/lang/README.md`.
 
 ---
 
 ## 📦 Third‑party software
 
-Druckerfarm builds on open‑source software (paho.mqtt.golang, gorilla/websocket, jlaffaye/ftp, hashicorp/go‑multierror & errwrap, golang.org/x/net & x/sync) and, at runtime, **go2rtc** (MIT) and **ffmpeg** (BtbN builds). go2rtc and ffmpeg are downloaded on demand and are **not** bundled with the program. Full attribution and licence texts are in [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+Druckerfarm builds on open‑source software (paho.mqtt.golang, gorilla/websocket, jlaffaye/ftp, hashicorp/go‑multierror & errwrap, golang.org/x/net & x/sync) and, at runtime, **go2rtc** (MIT) and **ffmpeg** (BtbN builds). go2rtc and ffmpeg are downloaded on demand and are **not** bundled with the program. Full attribution and licence texts are in [`app/THIRD_PARTY_LICENSES.md`](app/THIRD_PARTY_LICENSES.md).
 
 ---
 

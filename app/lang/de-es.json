@@ -192,8 +192,8 @@
   "Verbindung wird wiederhergestellt …": "Reconectando …",
   "Abbrechen": "Cancelar",
   "Jetzt neu laden": "Recargar ahora",
-  "Aufträge": "Tareas",
-  "⚙ Aufträge": "⚙ Tareas",
+  "Aufträge": "Trabajos",
+  "⚙ Aufträge": "⚙ Trabajos",
   "Name im Drucker geändert": "Nombre cambiado en la impresora",
   "Namen übernehmen": "Adoptar nombre",
   "unverändert": "sin cambios",
@@ -230,5 +230,6 @@
   "⏳ Laufzeit": "⏳ Tiempo de uso",
   "⏱ Verbleibend": "⏱ Restante",
   "🔍 Kamera-Adresse testen": "🔍 Probar dirección de cámara",
-  "✎ Bearbeiten": "✎ Editar"
+  "✎ Bearbeiten": "✎ Editar",
+  "Einstellungen": "Ajustes"
 }

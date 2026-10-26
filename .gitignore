@@ -9,3 +9,5 @@ ffmpeg.exe
 druckerfarm
 druckerfarm.exe
 *.zip
+history.json
+*.exe

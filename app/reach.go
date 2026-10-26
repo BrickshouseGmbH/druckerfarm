@@ -82,12 +82,24 @@ func itoa(n int) string {
 	if n == 0 {
 		return "0"
 	}
-	var b [8]byte
+	// A 64-bit int has up to 19 digits plus a possible sign. The old 8-byte
+	// buffer overflowed (b[-1] panic) as soon as n had 9+ digits — harmless for
+	// the small values the original callers passed, but recordHistory feeds in
+	// large print_error codes (e.g. 0x08000000 = 134217728), which crashed.
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b [20]byte
 	i := len(b)
 	for n > 0 {
 		i--
 		b[i] = byte('0' + n%10)
 		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
 	}
 	return string(b[i:])
 }

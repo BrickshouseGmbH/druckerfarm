@@ -78,6 +78,28 @@ func killAllGo2rtc() (int, error) {
 // then hang on their RTSP connections for about ten seconds until they
 // give up on their own. taskkill /T clears the whole tree at once, /F
 // erzwingt es.
+// killOrphanGo2rtcFfmpeg removes ffmpeg processes left behind when go2rtc
+// crashed: its camera ffmpeg children get orphaned (reparented), keep holding
+// the printers' RTSP connections, and prevent a fresh go2rtc from taking over
+// cleanly — which is why an in-program restart "after a crash" failed while a
+// restart of a healthy go2rtc (whole tree killed via taskkill /T) works. Only
+// ffmpeg with an RTSP input is touched; the YouTube push uses RTMP and is spared.
+func killOrphanGo2rtcFfmpeg() int {
+	script := `Get-CimInstance Win32_Process -Filter "Name='ffmpeg.exe'" | ` +
+		`Where-Object { $_.CommandLine -match 'rtsp' -and $_.CommandLine -notmatch 'rtmp' } | ` +
+		`ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }`
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	hideProcessWindow(cmd)
+	out, _ := cmd.Output()
+	n := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n
+}
+
 func killGo2rtcTree(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return

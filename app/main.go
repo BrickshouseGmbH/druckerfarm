@@ -182,6 +182,7 @@ func main() {
 	cleanupOldExe()
 
 	loadState()
+	loadHistory()         // per-printer error history
 	migrateAIConnectors() // fold legacy single-provider AI config into a connector
 	initSync(appDir)
 	initPraesenz(appDir) // local access log; parallel PC via SD file
@@ -248,11 +249,15 @@ func main() {
 	mux.HandleFunc("/api/jobs", handleJobsList)
 	mux.HandleFunc("/api/plan", handlePlan)
 	mux.HandleFunc("/api/preview", handlePreview)
+	mux.HandleFunc("/api/plates", handlePlates)
+	mux.HandleFunc("/api/filecolors", handleFileColors)
+	mux.HandleFunc("/api/history", handleHistory)
 	mux.HandleFunc("/api/job/status", handleJobStatus)
 	mux.HandleFunc("/api/job/stop", handleJobStop)
 	mux.HandleFunc("/api/open-folder", handleOpenFolder)
 	mux.HandleFunc("/api/diagnostics", handleDiagnostics)
 	mux.HandleFunc("/api/sync/upload", handleSyncUpload)
+	mux.HandleFunc("/api/sync/uploadmany", handleSyncUploadMany)
 	mux.HandleFunc("/api/sync/delete", handleSyncDelete)
 	mux.HandleFunc("/api/sync/diskspace", handleSyncDiskSpace)
 	mux.HandleFunc("/api/camera/resolution", handleCameraResolution)
@@ -331,13 +336,54 @@ func main() {
 	// Bind synchronously. Previously this ran in a goroutine and the error was
 	// dropped — with a busy port the second instance started halfway and took
 	// the first one down with it on exit.
+	origPort := appPort
 	addr := fmt.Sprintf("127.0.0.1:%d", appPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		// An instance is already running: focus its window and exit here.
-		log.Printf("ℹ️  Port %d belegt — vermutlich laeuft die App schon. Oeffne ein Fenster darauf.\n", appPort)
-		launchAppWindow(url)
-		return
+		// The bind can fail for very different reasons that need opposite
+		// reactions. Log the real error — it used to be swallowed, which made
+		// a blocked port look identical to a crash.
+		//  (a) another Druckerfarm is already serving → do NOT start a second
+		//      backend; just open a window onto it and exit (single instance);
+		//  (b) a previous instance is still shutting down and briefly holds the
+		//      port → wait a moment and bind ourselves;
+		//  (c) the port is blocked by Windows itself (a reserved/excluded port
+		//      range → WSAEACCES "forbidden by its access permissions", even
+		//      though nothing is listening) → fall back to another port so the
+		//      app always comes up instead of hanging on the splash forever.
+		log.Printf("⚠️  Listen auf %s fehlgeschlagen: %v", addr, err)
+
+		// (a) A real instance answers → hand off, single instance.
+		if serverResponds(appPort) {
+			log.Printf("ℹ️  Port %d belegt — App laeuft bereits, oeffne nur ein Fenster darauf.", appPort)
+			launchAppWindow(url)
+			return
+		}
+		// (b) Nobody serving → maybe a dying previous instance. Retry a few
+		// seconds until it releases the port.
+		for i := 0; i < 25 && err != nil; i++ {
+			time.Sleep(200 * time.Millisecond)
+			ln, err = net.Listen("tcp", addr)
+		}
+		// A slow starter may now be answering — hand off instead of racing it.
+		if err != nil && serverResponds(appPort) {
+			launchAppWindow(url)
+			return
+		}
+		// (c) Still cannot bind and nobody serves → the port is blocked. Fall
+		// back to the next free port so the app starts anyway.
+		if err != nil {
+			if p, l, ferr := listenFallback(origPort); ferr == nil {
+				appPort = p
+				ln = l
+				url = fmt.Sprintf("http://127.0.0.1:%d/loading", appPort)
+				log.Printf("↪️  Port %d nicht verfuegbar — weiche auf Port %d aus.", origPort, appPort)
+			} else {
+				log.Printf("❌ Kein Port bindbar (%d und Ausweichports) — Start nicht moeglich: %v", origPort, ferr)
+				launchAppWindow(url)
+				return
+			}
+		}
 	}
 	go http.Serve(ln, corsMiddleware(authMiddleware(mux)))
 	waitForPort(appPort)
@@ -433,6 +479,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func serveLoading(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Never cache the splash: otherwise a browser that kept this page open can
+	// show it again even when no server is listening, polling /ready forever.
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Write([]byte(`<!DOCTYPE html><html>
 <head><meta charset="UTF-8"><title>Druckerfarm</title>
 <style>
@@ -453,13 +502,25 @@ p{color:rgba(255,255,255,0.75);font-size:13px;margin-bottom:22px;font-family:ui-
   <div class="bar"><div class="fill"></div></div>
 </div>
 <script>
-// Poll until the app is ready, then navigate
-(function poll(){
-  fetch('/ready').then(r=>{
-    if(r.ok) window.location.replace('/');
-    else setTimeout(poll, 300);
-  }).catch(()=>setTimeout(poll, 300));
-})();
+// Poll until the app is ready, then navigate. If nothing answers for a while
+// the server is not running (e.g. port blocked / app closed) — say so instead
+// of spinning forever behind a splash that looks alive.
+var fails=0;
+function fail(){
+  fails++;
+  if(fails===34){ // ~10s of connection errors
+    document.querySelector('.wrap').innerHTML =
+      '<h1>Druckerfarm</h1><p style="margin-bottom:0">Server nicht erreichbar.<br>'+
+      'Bitte die App schließen und neu starten.</p>';
+  }
+  setTimeout(poll, 300);
+}
+function poll(){
+  fetch('/ready').then(function(r){
+    if(r.ok) window.location.replace('/'); else { fails=0; setTimeout(poll,300); }
+  }).catch(fail);
+}
+poll();
 </script>
 </body></html>`))
 }
@@ -947,27 +1008,184 @@ func handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// importRow is one printer parsed out of a CSV or go2rtc.yaml upload.
+type importRow struct {
+	Name, IP, Code, Model, Serial string
+}
+
 func handleImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", 405)
 		return
 	}
 	body, _ := io.ReadAll(r.Body)
-	added, skipped := 0, 0
+	rows := parseImportRows(string(body))
+
+	added, updated, skipped := 0, 0, 0
 	mu.Lock()
-	// We detect duplicates primarily by serial number, only fallback by
-	// IP (for rows without a serial). A stale IP of an
-	// offline printer thus does not block adding a new device.
-	existSerial := map[string]bool{}
-	existIP := map[string]bool{}
-	for _, p := range state.Printers {
-		existIP[p.IP] = true
-		if s := strings.TrimSpace(p.Serial); s != "" {
-			existSerial[strings.ToLower(s)] = true
+	// Index existing printers so a re-import can UPDATE them (primarily by serial,
+	// falling back to IP). Matching lets a re-import overwrite the access code
+	// (new password) instead of being skipped as a duplicate.
+	idxSerial := map[string]int{}
+	idxIP := map[string]int{}
+	for i, p := range state.Printers {
+		idxIP[p.IP] = i
+		if s := strings.ToLower(strings.TrimSpace(p.Serial)); s != "" {
+			idxSerial[s] = i
 		}
 	}
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
+	changed := false
+	for _, row := range rows {
+		if row.IP == "" || row.Code == "" {
+			skipped++
+			continue
+		}
+		found := -1
+		if s := strings.ToLower(strings.TrimSpace(row.Serial)); s != "" {
+			if i, ok := idxSerial[s]; ok {
+				found = i
+			}
+		}
+		if found < 0 {
+			if i, ok := idxIP[row.IP]; ok {
+				found = i
+			}
+		}
+		if found >= 0 {
+			// Update in place: the code (password) is always overwritten; the
+			// other fields only when the import actually carries a value.
+			p := &state.Printers[found]
+			p.Code = row.Code
+			if row.Name != "" {
+				p.Name = row.Name
+			}
+			if m := strings.ToUpper(strings.TrimSpace(row.Model)); m != "" && m != "UNBEKANNT" {
+				p.Model = m
+			}
+			if row.Serial != "" {
+				p.Serial = row.Serial
+				idxSerial[strings.ToLower(row.Serial)] = found
+			}
+			if row.IP != "" && row.IP != p.IP {
+				p.IP = row.IP
+				idxIP[row.IP] = found
+			}
+			updated++
+			changed = true
+			continue
+		}
+		// New printer.
+		name := row.Name
+		if name == "" {
+			name = row.IP
+		}
+		model := strings.ToUpper(strings.TrimSpace(row.Model))
+		if model == "" {
+			model = "UNBEKANNT"
+		}
+		state.Printers = append(state.Printers, Printer{
+			Model: model, Name: name, IP: row.IP, Code: row.Code, Serial: row.Serial,
+			Added: time.Now().UnixMilli(),
+		})
+		ni := len(state.Printers) - 1
+		idxIP[row.IP] = ni
+		if s := strings.ToLower(strings.TrimSpace(row.Serial)); s != "" {
+			idxSerial[s] = ni
+		}
+		added++
+		changed = true
+	}
+	mu.Unlock()
+	if changed {
+		saveState()
+		writeGo2rtcYaml()
+		restartGo2rtcAsync()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"added": added, "updated": updated, "skipped": skipped})
+}
+
+// parseImportRows turns an uploaded file into printer rows. A go2rtc.yaml (our
+// own export) is recognised and its printers reconstructed from the stream URLs;
+// anything else is treated as CSV.
+func parseImportRows(text string) []importRow {
+	if looksLikeGo2rtcYaml(text) {
+		return parseYamlRows(text)
+	}
+	return parseCSVRows(text)
+}
+
+func looksLikeGo2rtcYaml(text string) bool {
+	low := strings.ToLower(text)
+	if strings.Contains(low, "bblp:") && strings.Contains(low, "://") {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimSpace(low), "# go2rtc") ||
+		(strings.Contains(low, "\nstreams:") && strings.Contains(low, "rtsp"))
+}
+
+// parseYamlRows pulls IP + access code out of the stream URLs in a go2rtc.yaml
+// (rtsps://bblp:CODE@IP:322/…). Model and serial are not stored there, so they
+// stay empty — on a re-import the printer is matched by IP and its code updated.
+func parseYamlRows(text string) []importRow {
+	var rows []importRow
+	seen := map[string]bool{}
+	curName := ""
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimRight(raw, "\r")
+		trim := strings.TrimSpace(line)
+		if trim == "" || strings.HasPrefix(trim, "#") {
+			continue
+		}
+		// A stream key line looks like "  name:" (indented, ends with ':', no URL).
+		if !strings.HasPrefix(trim, "-") && strings.HasSuffix(trim, ":") && !strings.Contains(trim, "://") {
+			curName = strings.TrimSuffix(trim, ":")
+			continue
+		}
+		ip, code, ok := parseBblpURL(trim)
+		if !ok || seen[ip] {
+			continue
+		}
+		seen[ip] = true
+		name := curName
+		if name == "api" || name == "streams" || name == "" {
+			name = ip
+		}
+		rows = append(rows, importRow{Name: name, IP: ip, Code: code})
+	}
+	return rows
+}
+
+// parseBblpURL extracts IP and code from "…bblp:CODE@IP:322/…". Returns ok=false
+// if the line is not such a URL.
+func parseBblpURL(s string) (ip, code string, ok bool) {
+	i := strings.Index(s, "bblp:")
+	if i < 0 {
+		return "", "", false
+	}
+	rest := s[i+len("bblp:"):]
+	at := strings.Index(rest, "@")
+	if at < 0 {
+		return "", "", false
+	}
+	code = rest[:at]
+	host := rest[at+1:]
+	// host is IP[:port][/path]
+	if c := strings.IndexAny(host, ":/"); c >= 0 {
+		host = host[:c]
+	}
+	if code == "" || host == "" {
+		return "", "", false
+	}
+	return host, code, true
+}
+
+// parseCSVRows parses "Name,IP,Code[,Model[,Serial]]" (',' or ';'), skipping
+// blank/comment lines and a leading header row.
+func parseCSVRows(text string) []importRow {
+	var rows []importRow
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -980,46 +1198,27 @@ func handleImport(w http.ResponseWriter, r *http.Request) {
 			parts[i] = strings.TrimSpace(parts[i])
 		}
 		if len(parts) < 3 {
-			skipped++
 			continue
 		}
-		name, ip, code := parts[0], parts[1], parts[2]
-		model := "UNBEKANNT"
-		if len(parts) >= 4 && parts[3] != "" {
-			model = strings.ToUpper(parts[3])
-		}
-		serial := ""
-		if len(parts) >= 5 && parts[4] != "" {
-			serial = parts[4]
-		}
-		schon := false
-		if s := strings.ToLower(strings.TrimSpace(serial)); s != "" {
-			schon = existSerial[s]
-		} else {
-			schon = existIP[ip]
-		}
-		if name == "" || ip == "" || code == "" || schon {
-			skipped++
+		// Skip a header row: the IP column doesn't look like an IP.
+		if !looksLikeIP(parts[1]) {
 			continue
 		}
-		state.Printers = append(state.Printers, Printer{
-			Model: model, Name: name, IP: ip, Code: code, Serial: serial,
-			Added: time.Now().UnixMilli(),
-		})
-		existIP[ip] = true
-		if s := strings.ToLower(strings.TrimSpace(serial)); s != "" {
-			existSerial[s] = true
+		row := importRow{Name: parts[0], IP: parts[1], Code: parts[2]}
+		if len(parts) >= 4 {
+			row.Model = parts[3]
 		}
-		added++
+		if len(parts) >= 5 {
+			row.Serial = parts[4]
+		}
+		rows = append(rows, row)
 	}
-	mu.Unlock()
-	if added > 0 {
-		saveState()
-		writeGo2rtcYaml()
-		restartGo2rtcAsync()
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]int{"added": added, "skipped": skipped})
+	return rows
+}
+
+// looksLikeIP reports whether s is a dotted IPv4 literal (a.b.c.d).
+func looksLikeIP(s string) bool {
+	return net.ParseIP(s) != nil
 }
 
 // ─── SNAPSHOTS ────────────────────────────────────────────────────────────────
@@ -1624,6 +1823,12 @@ func restartGo2rtc() {
 	if n, _ := killAllGo2rtc(); n > 0 {
 		log.Printf("🔁 Neustart: %d verbliebene(n) go2rtc-Prozess(e) beendet", n)
 	}
+	// After a go2rtc CRASH its camera ffmpeg children are orphaned and still
+	// hold the printers' RTSP connections, so a fresh go2rtc cannot take over.
+	// Clean them up (the YouTube RTMP push is spared).
+	if n := killOrphanGo2rtcFfmpeg(); n > 0 {
+		log.Printf("🔁 Neustart: %d verwaiste(n) go2rtc-ffmpeg-Prozess(e) beendet", n)
+	}
 
 	// Wait until port 1984 is really free — not blindly a fixed time.
 	for i := 0; i < 25 && checkGo2rtcRunning(); i++ {
@@ -1867,6 +2072,20 @@ func saveState() {
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
+// serverResponds reports whether a Druckerfarm instance is actually serving on
+// the port — any HTTP reply counts (even a 503 "starting"). A previous instance
+// that only still holds the socket while shutting down does not reply, so this
+// tells a real running instance apart from a leftover port grab.
+func serverResponds(port int) bool {
+	c := &http.Client{Timeout: 600 * time.Millisecond}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/ready", port))
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
+}
+
 func waitForPort(port int) {
 	for i := 0; i < 50; i++ {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
@@ -1876,6 +2095,20 @@ func waitForPort(port int) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// listenFallback tries a handful of ports above base and returns the first that
+// binds. Used when the preferred port cannot be opened at all — either taken by
+// something we cannot talk to, or blocked by a Windows reserved port range. The
+// loading page polls /ready same-origin, so the window simply follows whatever
+// port we end up on.
+func listenFallback(base int) (int, net.Listener, error) {
+	for p := base + 1; p <= base+20; p++ {
+		if ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p)); err == nil {
+			return p, ln, nil
+		}
+	}
+	return 0, nil, fmt.Errorf("kein freier Ausweichport im Bereich %d-%d", base+1, base+20)
 }
 
 // ─── STATUS API ───────────────────────────────────────────────────────────────
